@@ -28,7 +28,6 @@ import android.support.v14.preference.SwitchPreference;
 
 import com.android.settings.R;
 import com.android.settings.datausage.DataSaverBackend;
-import com.android.settingslib.TetherUtil;
 
 import java.util.ArrayList;
 
@@ -110,16 +109,6 @@ public class WifiApEnabler {
         }
     }
 
-    public void setSoftapEnabled(boolean enable) {
-        if (TetherUtil.setWifiTethering(enable, mContext)) {
-            /* Disable here, enabled on receiving success broadcast */
-            mSwitch.setEnabled(false);
-        } else {
-            mSwitch.setSummary(R.string.wifi_error);
-        }
-
-    }
-
     public void updateConfigSummary(WifiConfiguration wifiConfig) {
         String s = mContext.getString(
                 com.android.internal.R.string.wifi_tether_configure_ssid_default);
@@ -150,6 +139,8 @@ public class WifiApEnabler {
             updateConfigSummary(wifiConfig);
         } else if (wifiErrored) {
             mSwitch.setSummary(R.string.wifi_error);
+        } else {
+            mSwitch.setSummary(R.string.wifi_hotspot_off_subtext);
         }
     }
 

@@ -18,27 +18,33 @@ package com.android.settings.dashboard.conditional;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.drawable.Icon;
+import android.net.ConnectivityManager;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.os.UserHandle;
 import android.os.UserManager;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.TetherSettings;
 import com.android.settings.Utils;
 import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
-import com.android.settingslib.TetherUtil;
 
 public class HotspotCondition extends Condition {
 
     private final WifiManager mWifiManager;
+    private final Receiver mReceiver;
+
+    private static final IntentFilter WIFI_AP_STATE_FILTER =
+        new IntentFilter(WifiManager.WIFI_AP_STATE_CHANGED_ACTION);
 
     public HotspotCondition(ConditionManager manager) {
         super(manager);
         mWifiManager = mManager.getContext().getSystemService(WifiManager.class);
+        mReceiver = new Receiver();
     }
 
     @Override
@@ -48,8 +54,13 @@ public class HotspotCondition extends Condition {
     }
 
     @Override
-    protected Class<?> getReceiverClass() {
-        return Receiver.class;
+    protected BroadcastReceiver getReceiver() {
+        return mReceiver;
+    }
+
+    @Override
+    protected IntentFilter getIntentFilter() {
+        return WIFI_AP_STATE_FILTER;
     }
 
     @Override
@@ -90,7 +101,7 @@ public class HotspotCondition extends Condition {
     @Override
     public void onPrimaryClick() {
         Utils.startWithFragment(mManager.getContext(), TetherSettings.class.getName(), null, null,
-                0, R.string.tether_settings_title_all, null);
+                0, R.string.tether_settings_title_all, null, MetricsEvent.DASHBOARD_SUMMARY);
     }
 
     @Override
@@ -102,7 +113,9 @@ public class HotspotCondition extends Condition {
             if (admin != null) {
                 RestrictedLockUtils.sendShowAdminSupportDetailsIntent(context, admin);
             } else {
-                TetherUtil.setWifiTethering(false, context);
+                ConnectivityManager cm = (ConnectivityManager) context.getSystemService(
+                        Context.CONNECTIVITY_SERVICE);
+                cm.stopTethering(ConnectivityManager.TETHERING_WIFI);
                 setActive(false);
             }
         } else {

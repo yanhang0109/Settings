@@ -38,7 +38,7 @@
             android:minWidth="@*android:dimen/preference_icon_minWidth"
             android:orientation="horizontal">
             <ImageView
-                android:id="@+android:id/icon"
+                android:id="@android:id/icon"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:layout_gravity="center"
@@ -55,7 +55,7 @@
             android:layout_marginBottom="6dip"
             android:layout_weight="1">
             <TextView
-                android:id="@+android:id/title"
+                android:id="@android:id/title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:singleLine="true"
@@ -83,7 +83,7 @@
         android:layout_height="fill_parent"
         android:paddingStart="12dip"
         android:paddingEnd="12dp"
-        android:src="@drawable/ic_sysbar_quicksettings"
+        android:src="@drawable/ic_settings"
         android:contentDescription="@string/apps_with_restrictions_settings_button"
         android:layout_gravity="center"
         android:clickable="true"

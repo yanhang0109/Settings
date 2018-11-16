@@ -37,14 +37,13 @@ import android.text.format.DateFormat;
 import android.util.Log;
 import android.widget.TimePicker;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
+import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
 
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Calendar;
-
-import static com.android.settings.notification.ZenModeScheduleDaysSelection.DAYS;
 
 public class ZenModeScheduleRuleSettings extends ZenModeRuleSettingsBase {
     private static final String KEY_DAYS = "days";
@@ -158,8 +157,9 @@ public class ZenModeScheduleRuleSettings extends ZenModeRuleSettingsBase {
         if (days != null && days.length > 0) {
             final StringBuilder sb = new StringBuilder();
             final Calendar c = Calendar.getInstance();
-            for (int i = 0; i < DAYS.length; i++) {
-                final int day = DAYS[i];
+            int[] daysOfWeek = ZenModeScheduleDaysSelection.getDaysOfWeekForLocale(c);
+            for (int i = 0; i < daysOfWeek.length; i++) {
+                final int day = daysOfWeek[i];
                 for (int j = 0; j < days.length; j++) {
                     if (day == days[j]) {
                         c.set(Calendar.DAY_OF_WEEK, day);
@@ -199,7 +199,7 @@ public class ZenModeScheduleRuleSettings extends ZenModeRuleSettingsBase {
     }
 
     @Override
-    protected int getMetricsCategory() {
+    public int getMetricsCategory() {
         return MetricsEvent.NOTIFICATION_ZEN_MODE_SCHEDULE_RULE;
     }
 
@@ -276,9 +276,14 @@ public class ZenModeScheduleRuleSettings extends ZenModeRuleSettingsBase {
             setSummary(time);
         }
 
-        public static class TimePickerFragment extends DialogFragment implements
+        public static class TimePickerFragment extends InstrumentedDialogFragment implements
                 TimePickerDialog.OnTimeSetListener {
             public TimePickerPreference pref;
+
+            @Override
+            public int getMetricsCategory() {
+                return MetricsEvent.DIALOG_ZEN_TIMEPICKER;
+            }
 
             @Override
             public Dialog onCreateDialog(Bundle savedInstanceState) {

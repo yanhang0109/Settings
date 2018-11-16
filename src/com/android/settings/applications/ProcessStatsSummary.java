@@ -22,7 +22,7 @@ import android.support.v7.preference.Preference;
 import android.support.v7.preference.Preference.OnPreferenceClickListener;
 import android.text.format.Formatter;
 import android.text.format.Formatter.BytesResult;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.SummaryPreference;
 import com.android.settings.Utils;
@@ -53,10 +53,6 @@ public class ProcessStatsSummary extends ProcessStatsBase implements OnPreferenc
 
         addPreferencesFromResource(R.xml.process_stats_summary);
         mSummaryPref = (SummaryPreference) findPreference(KEY_STATUS_HEADER);
-        int memColor = getContext().getColor(R.color.running_processes_apps_ram);
-        mSummaryPref.setColors(memColor, memColor,
-                getContext().getColor(R.color.running_processes_free_ram));
-
         mPerformance = findPreference(KEY_PERFORMANCE);
         mTotalMemory = findPreference(KEY_TOTAL_MEMORY);
         mAverageUsed = findPreference(KEY_AVERAGY_USED);
@@ -102,7 +98,7 @@ public class ProcessStatsSummary extends ProcessStatsBase implements OnPreferenc
     }
 
     @Override
-    protected int getMetricsCategory() {
+    public int getMetricsCategory() {
         return MetricsEvent.PROCESS_STATS_SUMMARY;
     }
 

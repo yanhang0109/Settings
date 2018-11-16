@@ -16,23 +16,20 @@
 
 package com.android.settings.fingerprint;
 
+import android.app.KeyguardManager;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.os.UserHandle;
 import android.widget.Button;
+import android.widget.TextView;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.settings.R;
 import com.android.settings.SetupChooseLockGeneric;
 import com.android.settings.SetupWizardUtils;
-import com.android.setupwizardlib.SetupWizardRecyclerLayout;
-import com.android.setupwizardlib.items.Item;
-import com.android.setupwizardlib.items.RecyclerItemAdapter;
-import com.android.setupwizardlib.view.NavigationBar;
 
-public class SetupFingerprintEnrollIntroduction extends FingerprintEnrollIntroduction
-        implements NavigationBar.NavigationBarListener {
+public class SetupFingerprintEnrollIntroduction extends FingerprintEnrollIntroduction {
 
     @Override
     protected Intent getChooseLockIntent() {
@@ -56,24 +53,19 @@ public class SetupFingerprintEnrollIntroduction extends FingerprintEnrollIntrodu
 
     @Override
     protected void initViews() {
-        final SetupWizardRecyclerLayout layout =
-                (SetupWizardRecyclerLayout) findViewById(R.id.setup_wizard_layout);
-        final RecyclerItemAdapter adapter = (RecyclerItemAdapter) layout.getAdapter();
-        final Item nextItem = (Item) adapter.findItemById(R.id.next_button);
-        nextItem.setTitle(
-                getText(R.string.security_settings_fingerprint_enroll_introduction_continue_setup));
+        super.initViews();
 
-        final Item cancelItem = (Item) adapter.findItemById(R.id.cancel_button);
-        cancelItem.setTitle(
-                getText(R.string.security_settings_fingerprint_enroll_introduction_cancel_setup));
+        TextView description = (TextView) findViewById(R.id.description_text);
+        description.setText(
+                R.string.security_settings_fingerprint_enroll_introduction_message_setup);
 
-        SetupWizardUtils.setImmersiveMode(this);
-        getNavigationBar().setNavigationBarListener(this);
-        Button nextButton = getNavigationBar().getNextButton();
-        nextButton.setText(null);
-        nextButton.setEnabled(false);
-        layout.setDividerInset(getResources().getDimensionPixelSize(
-                R.dimen.suw_items_icon_divider_inset));
+        Button nextButton = getNextButton();
+        nextButton.setText(
+                R.string.security_settings_fingerprint_enroll_introduction_continue_setup);
+
+        final Button cancelButton = (Button) findViewById(R.id.fingerprint_cancel_button);
+        cancelButton.setText(
+                R.string.security_settings_fingerprint_enroll_introduction_cancel_setup);
     }
 
     @Override
@@ -92,23 +84,21 @@ public class SetupFingerprintEnrollIntroduction extends FingerprintEnrollIntrodu
 
     @Override
     protected void onCancelButtonClick() {
-        SetupSkipDialog dialog = SetupSkipDialog.newInstance(
-                getIntent().getBooleanExtra(SetupSkipDialog.EXTRA_FRP_SUPPORTED, false));
-        dialog.show(getFragmentManager());
+        KeyguardManager keyguardManager = getSystemService(KeyguardManager.class);
+        if (keyguardManager.isKeyguardSecure()) {
+            // If the keyguard is already set up securely (maybe the user added a backup screen
+            // lock and skipped fingerprint), return RESULT_SKIP directly.
+            setResult(RESULT_SKIP);
+            finish();
+        } else {
+            SetupSkipDialog dialog = SetupSkipDialog.newInstance(
+                    getIntent().getBooleanExtra(SetupSkipDialog.EXTRA_FRP_SUPPORTED, false));
+            dialog.show(getFragmentManager());
+        }
     }
 
     @Override
-    public void onNavigateBack() {
-        onBackPressed();
-    }
-
-    @Override
-    public void onNavigateNext() {
-        // next is handled via the onNextButtonClick method in FingerprintEnrollIntroduction
-    }
-
-    @Override
-    protected int getMetricsCategory() {
+    public int getMetricsCategory() {
         return MetricsEvent.FINGERPRINT_ENROLL_INTRO_SETUP;
     }
 }

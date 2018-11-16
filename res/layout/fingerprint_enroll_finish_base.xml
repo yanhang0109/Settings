@@ -15,12 +15,14 @@
   ~ limitations under the License
   -->
 
-<com.android.setupwizardlib.SetupWizardLayout
+<com.android.setupwizardlib.GlifLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/setup_wizard_layout"
+    style="?attr/fingerprint_layout_theme"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    style="?attr/fingerprint_layout_theme">
+    app:suwFooter="@layout/fingerprint_enroll_finish_base_footer">
 
     <LinearLayout
         style="@style/SuwContentFrame"
@@ -32,18 +34,18 @@
 
         <TextView
             android:id="@+id/message"
-            style="@style/TextAppearance.FingerprintMessage"
+            style="@style/SuwDescription.Glif"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/suw_description_margin_top"
+            android:layout_marginTop="@dimen/suw_description_glif_margin_top"
             android:text="@string/security_settings_fingerprint_enroll_finish_message"/>
 
         <TextView
             android:id="@+id/message_secondary"
-            style="@style/TextAppearance.FingerprintMessage"
+            style="@style/SuwDescription.Glif"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/suw_description_margin_top"
+            android:layout_marginTop="@dimen/suw_description_glif_margin_top"
             android:text="@string/setup_fingerprint_enroll_finish_message_secondary"
             android:textColor="?android:attr/textColorSecondary"
             android:visibility="gone" />
@@ -71,31 +73,6 @@
             android:layout_width="match_parent"
             android:layout_weight="1"/>
 
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="-12dp"
-            android:layout_marginBottom="4dp"
-            android:layout_gravity="end"
-            android:orientation="horizontal">
-
-            <Button
-                style="@style/Button.FingerprintButton"
-                android:id="@+id/add_another_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/fingerprint_enroll_button_add" />
-
-            <Button
-                style="@style/Button.FingerprintButton"
-                android:id="@+id/next_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="end|center_vertical"
-                android:text="@string/security_settings_fingerprint_enroll_done" />
-
-        </LinearLayout>
-
     </LinearLayout>
 
-</com.android.setupwizardlib.SetupWizardLayout>
+</com.android.setupwizardlib.GlifLayout>

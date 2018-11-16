@@ -20,17 +20,14 @@ import android.content.Intent;
 import android.content.res.Resources;
 import android.os.UserHandle;
 import android.view.View;
-import android.widget.Button;
 import android.widget.TextView;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.ChooseLockSettingsHelper;
 import com.android.settings.R;
 import com.android.settings.SetupWizardUtils;
-import com.android.setupwizardlib.view.NavigationBar;
 
-public class SetupFingerprintEnrollFinish extends FingerprintEnrollFinish
-        implements NavigationBar.NavigationBarListener {
+public class SetupFingerprintEnrollFinish extends FingerprintEnrollFinish {
 
     @Override
     protected Intent getEnrollingIntent() {
@@ -51,16 +48,7 @@ public class SetupFingerprintEnrollFinish extends FingerprintEnrollFinish
 
     @Override
     protected void initViews() {
-        SetupWizardUtils.setImmersiveMode(this);
-
-        final View nextButton = findViewById(R.id.next_button);
-        if (nextButton != null) {
-            nextButton.setVisibility(View.GONE);
-        }
-
-        final NavigationBar navigationBar = getNavigationBar();
-        navigationBar.setNavigationBarListener(this);
-        navigationBar.getBackButton().setVisibility(View.GONE);
+        super.initViews();
 
         final TextView message = (TextView) findViewById(R.id.message);
         message.setText(R.string.setup_fingerprint_enroll_finish_message);
@@ -70,22 +58,7 @@ public class SetupFingerprintEnrollFinish extends FingerprintEnrollFinish
     }
 
     @Override
-    protected Button getNextButton() {
-        return getNavigationBar().getNextButton();
-    }
-
-    @Override
-    public void onNavigateBack() {
-        onBackPressed();
-    }
-
-    @Override
-    public void onNavigateNext() {
-        onNextButtonClick();
-    }
-
-    @Override
-    protected int getMetricsCategory() {
+    public int getMetricsCategory() {
         return MetricsEvent.FINGERPRINT_ENROLL_FINISH_SETUP;
     }
 }

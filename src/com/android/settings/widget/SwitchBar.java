@@ -34,18 +34,19 @@ import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
 
-import com.android.internal.logging.MetricsLogger;
 import com.android.settings.R;
+import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.settings.overlay.FeatureFactory;
 import com.android.settingslib.RestrictedLockUtils;
 
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
-
 import java.util.ArrayList;
+
+import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedChangeListener,
         View.OnClickListener {
 
-    public static interface OnSwitchChangeListener {
+    public interface OnSwitchChangeListener {
         /**
          * Called when the checked state of the Switch has changed.
          *
@@ -55,6 +56,7 @@ public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedC
         void onSwitchChanged(Switch switchView, boolean isChecked);
     }
 
+    private MetricsFeatureProvider mMetricsFeatureProvider;
     private final TextAppearanceSpan mSummarySpan;
 
     private ToggleSwitch mSwitch;
@@ -63,7 +65,8 @@ public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedC
     private String mLabel;
     private String mSummary;
 
-    private boolean mDisabledByAdmin = false;
+    private boolean mLoggingIntialized;
+    private boolean mDisabledByAdmin;
     private EnforcedAdmin mEnforcedAdmin = null;
 
     private String mMetricsTag;
@@ -114,7 +117,6 @@ public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedC
         lp = (MarginLayoutParams) mSwitch.getLayoutParams();
         lp.setMarginEnd(switchBarMarginEnd);
         setBackgroundColor(switchBarBackgroundColor);
-        mSwitch.setBackgroundColor(switchBarBackgroundColor);
 
         addOnSwitchChangeListener(new OnSwitchChangeListener() {
             @Override
@@ -129,6 +131,8 @@ public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedC
 
         // Default is hide
         setVisibility(View.GONE);
+
+        mMetricsFeatureProvider = FeatureFactory.getFactory(context).getMetricsFeatureProvider();
     }
 
     public void setMetricsTag(String tag) {
@@ -229,11 +233,10 @@ public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedC
     @Override
     public void onClick(View v) {
         if (mDisabledByAdmin) {
-            MetricsLogger.count(mContext, mMetricsTag + "/switch_bar|restricted", 1);
+            mMetricsFeatureProvider.count(mContext, mMetricsTag + "/switch_bar|restricted", 1);
             RestrictedLockUtils.sendShowAdminSupportDetailsIntent(mContext, mEnforcedAdmin);
         } else {
             final boolean isChecked = !mSwitch.isChecked();
-            MetricsLogger.count(mContext, mMetricsTag + "/switch_bar|" + isChecked, 1);
             setChecked(isChecked);
         }
     }
@@ -247,6 +250,10 @@ public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedC
 
     @Override
     public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+        if (mLoggingIntialized) {
+            mMetricsFeatureProvider.count(mContext, mMetricsTag + "/switch_bar|" + isChecked, 1);
+        }
+        mLoggingIntialized = true;
         propagateChecked(isChecked);
     }
 
@@ -335,6 +342,14 @@ public class SwitchBar extends LinearLayout implements CompoundButton.OnCheckedC
     @Override
     public CharSequence getAccessibilityClassName() {
         return Switch.class.getName();
+    }
+
+    @Override
+    public boolean onRequestSendAccessibilityEvent(View child, AccessibilityEvent event) {
+        // Since the children are marked as not important for accessibility, re-dispatch all
+        // of their events as if they came from this view
+        event.setSource(this);
+        return true;
     }
 
     /** @hide */

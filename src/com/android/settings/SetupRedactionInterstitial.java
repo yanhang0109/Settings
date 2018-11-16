@@ -16,20 +16,13 @@
 
 package com.android.settings;
 
-import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Resources;
-import android.os.Bundle;
-import android.os.UserHandle;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.LinearLayout;
 
 import com.android.settings.notification.RedactionInterstitial;
-import com.android.setupwizardlib.SetupWizardLayout;
-import com.android.setupwizardlib.view.NavigationBar;
 
 /**
  * Setup Wizard's version of RedactionInterstitial screen. It inherits the logic and basic structure
@@ -39,6 +32,20 @@ import com.android.setupwizardlib.view.NavigationBar;
  * inherit those changes.
  */
 public class SetupRedactionInterstitial extends RedactionInterstitial {
+
+    /**
+     * Set the enabled state of SetupRedactionInterstitial activity to configure whether it is shown
+     * as part of setup wizard's optional steps.
+     */
+    public static void setEnabled(Context context, boolean enabled) {
+        PackageManager packageManager = context.getPackageManager();
+        ComponentName componentName = new ComponentName(context, SetupRedactionInterstitial.class);
+        packageManager.setComponentEnabledSetting(
+                componentName,
+                enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP);
+    }
 
     @Override
     public Intent getIntent() {
@@ -59,49 +66,8 @@ public class SetupRedactionInterstitial extends RedactionInterstitial {
         super.onApplyThemeResource(theme, resid, first);
     }
 
-    @Override
-    protected void onCreate(Bundle savedInstance) {
-        super.onCreate(savedInstance);
-        LinearLayout layout = (LinearLayout) findViewById(R.id.content_parent);
-        layout.setFitsSystemWindows(false);
-    }
+    public static class SetupRedactionInterstitialFragment extends RedactionInterstitialFragment {
 
-    public static class SetupRedactionInterstitialFragment extends RedactionInterstitialFragment
-            implements NavigationBar.NavigationBarListener {
-
-        @Override
-        public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                Bundle savedInstanceState) {
-            return inflater.inflate(R.layout.setup_redaction_interstitial, container, false);
-        }
-
-        @Override
-        public void onViewCreated(View view, Bundle savedInstanceState) {
-            super.onViewCreated(view, savedInstanceState);
-            final SetupWizardLayout layout =
-                    (SetupWizardLayout) view.findViewById(R.id.setup_wizard_layout);
-
-            final NavigationBar navigationBar = layout.getNavigationBar();
-            navigationBar.setNavigationBarListener(this);
-            navigationBar.getBackButton().setVisibility(View.GONE);
-            SetupWizardUtils.setImmersiveMode(getActivity());
-        }
-
-        @Override
-        public void onNavigateBack() {
-            final Activity activity = getActivity();
-            if (activity != null) {
-                activity.onBackPressed();
-            }
-        }
-
-        @Override
-        public void onNavigateNext() {
-            final SetupRedactionInterstitial activity = (SetupRedactionInterstitial) getActivity();
-            if (activity != null) {
-                activity.setResult(RESULT_OK, activity.getResultIntentData());
-                finish();
-            }
-        }
+        // Setup wizard specific UI customizations can be done here
     }
 }

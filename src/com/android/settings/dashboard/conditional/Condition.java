@@ -16,12 +16,16 @@
 
 package com.android.settings.dashboard.conditional;
 
-import android.content.ComponentName;
-import android.content.pm.PackageManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
 import android.graphics.drawable.Icon;
 import android.os.PersistableBundle;
-import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+
+import android.support.annotation.VisibleForTesting;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.settings.overlay.FeatureFactory;
 
 public abstract class Condition {
 
@@ -30,6 +34,8 @@ public abstract class Condition {
     private static final String KEY_LAST_STATE = "last_state";
 
     protected final ConditionManager mManager;
+    protected final MetricsFeatureProvider mMetricsFeatureProvider;
+    protected boolean mReceiverRegistered;
 
     private boolean mIsSilenced;
     private boolean mIsActive;
@@ -37,7 +43,12 @@ public abstract class Condition {
 
     // All conditions must live in this package.
     Condition(ConditionManager manager) {
+       this(manager, FeatureFactory.getFactory(manager.getContext()).getMetricsFeatureProvider());
+    }
+
+    Condition(ConditionManager manager, MetricsFeatureProvider metricsFeatureProvider) {
         mManager = manager;
+        mMetricsFeatureProvider = metricsFeatureProvider;
     }
 
     void restoreState(PersistableBundle bundle) {
@@ -85,27 +96,38 @@ public abstract class Condition {
     public void silence() {
         if (!mIsSilenced) {
             mIsSilenced = true;
-            MetricsLogger.action(mManager.getContext(),
-                    MetricsEvent.ACTION_SETTINGS_CONDITION_DISMISS, getMetricsConstant());
+            Context context = mManager.getContext();
+            mMetricsFeatureProvider.action(context, MetricsEvent.ACTION_SETTINGS_CONDITION_DISMISS,
+                    getMetricsConstant());
             onSilenceChanged(mIsSilenced);
             notifyChanged();
         }
     }
 
-    private void onSilenceChanged(boolean silenced) {
-        Class<?> clz = getReceiverClass();
-        if (clz == null) {
+    @VisibleForTesting
+    void onSilenceChanged(boolean silenced) {
+        final BroadcastReceiver receiver = getReceiver();
+        if (receiver == null) {
             return;
         }
-        // Only need to listen for changes when its been silenced.
-        PackageManager pm = mManager.getContext().getPackageManager();
-        pm.setComponentEnabledSetting(new ComponentName(mManager.getContext(), clz),
-                silenced ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                        : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP);
+        if (silenced) {
+            if (!mReceiverRegistered) {
+                mManager.getContext().registerReceiver(receiver, getIntentFilter());
+                mReceiverRegistered = true;
+            }
+        } else {
+            if (mReceiverRegistered) {
+                mManager.getContext().unregisterReceiver(receiver);
+                mReceiverRegistered = false;
+            }
+        }
     }
 
-    protected Class<?> getReceiverClass() {
+    protected BroadcastReceiver getReceiver() {
+        return null;
+    }
+
+    protected IntentFilter getIntentFilter() {
         return null;
     }
 
@@ -115,6 +137,12 @@ public abstract class Condition {
 
     long getLastChange() {
         return mLastStateChange;
+    }
+
+    public void onResume() {
+    }
+
+    public void onPause() {
     }
 
     // State.

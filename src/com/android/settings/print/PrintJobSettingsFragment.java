@@ -26,12 +26,14 @@ import android.print.PrintManager.PrintJobStateChangeListener;
 import android.support.v7.preference.Preference;
 import android.text.TextUtils;
 import android.text.format.DateUtils;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import android.view.ViewGroup;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
 
@@ -65,13 +67,14 @@ public class PrintJobSettingsFragment extends SettingsPreferenceFragment {
     private PrintJobId mPrintJobId;
 
     @Override
-    protected int getMetricsCategory() {
+    public int getMetricsCategory() {
         return MetricsEvent.PRINT_JOB_SETTINGS;
     }
 
     @Override
-    public void onCreate(Bundle icicle) {
-        super.onCreate(icicle);
+    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+            Bundle savedInstanceState) {
+        View view = super.onCreateView(inflater, container, savedInstanceState);
 
         addPreferencesFromResource(R.xml.print_job_settings);
         mPrintJobPreference = findPreference(PRINT_JOB_PREFERENCE);
@@ -86,6 +89,8 @@ public class PrintJobSettingsFragment extends SettingsPreferenceFragment {
         processArguments();
 
         setHasOptionsMenu(true);
+
+        return  view;
     }
 
     @Override

@@ -30,32 +30,32 @@
     <item msgid="8392017019801393511">"الكل"</item>
   </string-array>
   <string-array name="screen_timeout_entries">
-    <item msgid="3342301044271143016">"۱۵ ثانية"</item>
+    <item msgid="3342301044271143016">"١٥ ثانية"</item>
     <item msgid="8881760709354815449">"۳۰ ثانية"</item>
     <item msgid="7589406073232279088">"دقيقة واحدة"</item>
     <item msgid="7001195990902244174">"۲ دقائق"</item>
-    <item msgid="7489864775127957179">"۵ دقائق"</item>
+    <item msgid="7489864775127957179">"٥ دقائق"</item>
     <item msgid="2314124409517439288">"۱۰ دقائق"</item>
     <item msgid="6864027152847611413">"۳۰ دقيقة"</item>
   </string-array>
   <string-array name="dream_timeout_entries">
     <item msgid="3149294732238283185">"مطلقًا"</item>
-    <item msgid="2194151041885903260">"۱۵ ثانية"</item>
+    <item msgid="2194151041885903260">"١٥ ثانية"</item>
     <item msgid="5892295237131074341">"۳۰ ثانية"</item>
     <item msgid="3538441365970038213">"دقيقة واحدة"</item>
     <item msgid="412343871668955639">"دقيقتان"</item>
-    <item msgid="5076853889688991690">"۵ دقائق"</item>
+    <item msgid="5076853889688991690">"٥ دقائق"</item>
     <item msgid="1903860996174927898">"۱۰ دقائق"</item>
     <item msgid="6415509612413178727">"۳۰ دقيقة"</item>
   </string-array>
   <string-array name="lock_after_timeout_entries">
     <item msgid="8929270399652145290">"فورًا"</item>
-    <item msgid="6736512735606834431">"۵ ثوانٍ"</item>
-    <item msgid="8044619388267891375">"۱۵ ثانية"</item>
+    <item msgid="6736512735606834431">"٥ ثوانٍ"</item>
+    <item msgid="8044619388267891375">"١٥ ثانية"</item>
     <item msgid="1822002388249545488">"۳۰ ثانية"</item>
     <item msgid="8538071621211916519">"دقيقة واحدة"</item>
     <item msgid="5663439580228932882">"دقيقتان"</item>
-    <item msgid="49888496216106852">"۵ دقائق"</item>
+    <item msgid="49888496216106852">"٥ دقائق"</item>
     <item msgid="9002737361305019353">"۱۰ دقائق"</item>
     <item msgid="4322676235684793329">"۳۰ دقيقة"</item>
   </string-array>
@@ -63,7 +63,7 @@
     <item msgid="8166647333858618801">"صغير"</item>
     <item msgid="6986443533756848935">"الإعداد الافتراضي"</item>
     <item msgid="38373998008112077">"كبير"</item>
-    <item msgid="7635254317531872272">"أكبر مستوى"</item>
+    <item msgid="7635254317531872272">"الأكبر"</item>
   </string-array>
   <string-array name="wifi_status">
     <item msgid="1922181315419294640"></item>
@@ -134,15 +134,16 @@
   </string-array>
   <string-array name="bluetooth_visibility_timeout_entries">
     <item msgid="8151962652413645395">"دقيقتان"</item>
-    <item msgid="8675215713017289017">"۵ دقائق"</item>
+    <item msgid="8675215713017289017">"٥ دقائق"</item>
     <item msgid="477015974247590543">"ساعة واحدة"</item>
     <item msgid="5198271470953124739">"بلا مهلة"</item>
   </string-array>
   <string-array name="wifi_signal">
     <item msgid="2245412278046491293">"ضعيفة"</item>
-    <item msgid="5615082285463430971">"جيدة"</item>
-    <item msgid="3565079809875324621">"جيد"</item>
-    <item msgid="5702329417707689835">"ممتازة"</item>
+    <item msgid="2042505933058940139">"ضعيفة"</item>
+    <item msgid="1344546617235886412">"متوسطة"</item>
+    <item msgid="6019931571712517411">"جيدة"</item>
+    <item msgid="8986346415847956850">"ممتازة"</item>
   </string-array>
   <string-array name="wifi_sleep_policy_entries">
     <item msgid="3269131034472904310">"دومًا"</item>
@@ -173,6 +174,14 @@
     <item msgid="2577747762745812488">"لا شيء"</item>
     <item msgid="937786527870979616">"MSCHAPV2"</item>
     <item msgid="5302613883318643629">"GTC"</item>
+  </string-array>
+  <string-array name="wifi_peap_phase2_entries_with_sim_auth">
+    <item msgid="5760470455461128892">"بدون"</item>
+    <item msgid="7480272092408291086">"MSCHAPV2"</item>
+    <item msgid="5881794903338319324">"GTC"</item>
+    <item msgid="5610607665198791980">"‏شريحة SIM"</item>
+    <item msgid="2860798636241124128">"AKA"</item>
+    <item msgid="8926455723452645935">"AKA\'‎"</item>
   </string-array>
   <string-array name="wifi_phase2_entries">
     <item msgid="1818786254010764570">"لا شيء"</item>
@@ -302,6 +311,7 @@
     <item msgid="6628873315024166197">"تشغيل الشاشة"</item>
     <item msgid="3253368931113490863">"الحصول على الحسابات"</item>
     <item msgid="780392378084812901">"التشغيل في الخلفية"</item>
+    <item msgid="2629748510881309577">"مستوى صوت إمكانية الوصول"</item>
   </string-array>
   <string-array name="app_ops_labels">
     <item msgid="6602854600289714121">"الموقع"</item>
@@ -368,6 +378,7 @@
     <item msgid="5832543806893763620">"تشغيل الشاشة"</item>
     <item msgid="5258373962467495905">"الحصول على الحسابات"</item>
     <item msgid="334625385979270703">"التشغيل في الخلفية"</item>
+    <item msgid="9039213578110332702">"مستوى صوت إمكانية الوصول"</item>
   </string-array>
   <string-array name="long_press_timeout_selector_titles">
     <item msgid="3511504869290423954">"قصيرة"</item>
@@ -401,9 +412,9 @@
     <item msgid="3821418743395480313">"منخفضة"</item>
   </string-array>
   <string-array name="captioning_opacity_selector_titles">
-    <item msgid="7622491218136667566">"٪۲۵"</item>
-    <item msgid="2367156416247936773">"٪۵۰"</item>
-    <item msgid="5395560410107149298">"٪۷۵"</item>
+    <item msgid="7622491218136667566">"٢٥٪"</item>
+    <item msgid="2367156416247936773">"٥٠٪"</item>
+    <item msgid="5395560410107149298">"٧٥٪"</item>
     <item msgid="8342334626783983353">"٪۱۰۰"</item>
   </string-array>
   <string-array name="captioning_preset_selector_titles">
@@ -471,5 +482,10 @@
     <item msgid="3170497246594232819">"أرجواني"</item>
     <item msgid="4608643045752965568">"قرنفلي"</item>
     <item msgid="6131821495505931173">"أحمر"</item>
+  </string-array>
+  <string-array name="automatic_storage_management_days">
+    <item msgid="687318592238852312">"أكثر من 30 يومًا"</item>
+    <item msgid="2900554746706302178">"أكثر من 60 يومًا"</item>
+    <item msgid="5692284879054004388">"أكثر من 90 يومًا"</item>
   </string-array>
 </resources>

@@ -14,6 +14,9 @@
 
 package com.android.settings.datausage;
 
+import static android.net.NetworkPolicyManager.POLICY_REJECT_METERED_BACKGROUND;
+
+import android.app.Activity;
 import android.app.LoaderManager;
 import android.content.Context;
 import android.content.Intent;
@@ -27,9 +30,7 @@ import android.net.NetworkPolicy;
 import android.net.NetworkStatsHistory;
 import android.net.NetworkTemplate;
 import android.net.TrafficStats;
-import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.Process;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -38,22 +39,25 @@ import android.support.v7.preference.Preference;
 import android.support.v7.preference.PreferenceCategory;
 import android.text.format.Formatter;
 import android.util.ArraySet;
+import android.util.IconDrawableFactory;
 import android.view.View;
 import android.widget.AdapterView;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
-import com.android.settings.AppHeader;
+
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
+import com.android.settings.applications.AppHeaderController;
 import com.android.settings.applications.AppInfoBase;
+import com.android.settings.overlay.FeatureFactory;
 import com.android.settingslib.AppItem;
 import com.android.settingslib.Utils;
 import com.android.settingslib.net.ChartData;
 import com.android.settingslib.net.ChartDataLoader;
 import com.android.settingslib.net.UidDetailProvider;
 
-import static android.net.NetworkPolicyManager.POLICY_REJECT_METERED_BACKGROUND;
-
 public class AppDataUsage extends DataUsageBase implements Preference.OnPreferenceChangeListener,
         DataSaverBackend.Listener {
+
+    private static final String TAG = "AppDataUsage";
 
     public static final String ARG_APP_ITEM = "app_item";
     public static final String ARG_NETWORK_TEMPLATE = "network_template";
@@ -68,6 +72,7 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
     private static final String KEY_UNRESTRICTED_DATA = "unrestricted_data_saver";
 
     private static final int LOADER_CHART_DATA = 2;
+    private static final int LOADER_APP_PREF = 3;
 
     private final ArraySet<String> mPackages = new ArraySet<>();
     private Preference mTotalUsage;
@@ -143,13 +148,13 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
                 PackageManager pm = getPackageManager();
                 try {
                     ApplicationInfo info = pm.getApplicationInfo(mPackages.valueAt(0), 0);
-                    mIcon = info.loadIcon(pm);
+                    mIcon = IconDrawableFactory.newInstance(getActivity()).getBadgedIcon(info);
                     mLabel = info.loadLabel(pm);
                     mPackageName = info.packageName;
                 } catch (PackageManager.NameNotFoundException e) {
                 }
             }
-            if (mAppItem.key == Process.SYSTEM_UID) {
+            if (!UserHandle.isApp(mAppItem.key)) {
                 removePreference(KEY_UNRESTRICTED_DATA);
                 removePreference(KEY_RESTRICT_BACKGROUND);
             } else {
@@ -180,10 +185,7 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
 
             if (mPackages.size() > 1) {
                 mAppList = (PreferenceCategory) findPreference(KEY_APP_LIST);
-                for (int i = 1 ; i < mPackages.size(); i++) {
-                    new AppPrefLoader().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,
-                            mPackages.valueAt(i));
-                }
+                getLoaderManager().initLoader(LOADER_APP_PREF, Bundle.EMPTY, mAppPrefCallbacks);
             } else {
                 removePreference(KEY_APP_LIST);
             }
@@ -196,9 +198,12 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
                 final int userId = UidDetailProvider.getUserIdForKey(mAppItem.key);
                 final UserManager um = UserManager.get(getActivity());
                 final UserInfo info = um.getUserInfo(userId);
-                final PackageManager pm = getPackageManager();
-                mIcon = Utils.getUserIcon(getActivity(), um, info);
-                mLabel = Utils.getUserLabel(getActivity(), info);
+                if (info != null) {
+                    mIcon = Utils.getUserIcon(getActivity(), um, info);
+                    mLabel = Utils.getUserLabel(getActivity(), info);
+                } else {
+                    mLabel = getContext().getString(R.string.data_usage_uninstalled_apps_users);
+                }
                 mPackageName = getActivity().getPackageName();
             }
             removePreference(KEY_UNRESTRICTED_DATA);
@@ -323,19 +328,29 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        View header = setPinnedHeaderView(R.layout.app_header);
         String pkg = mPackages.size() != 0 ? mPackages.valueAt(0) : null;
         int uid = 0;
         try {
             uid = pkg != null ? getPackageManager().getPackageUid(pkg, 0) : 0;
         } catch (PackageManager.NameNotFoundException e) {
         }
-        AppHeader.setupHeaderView(getActivity(), mIcon, mLabel,
-                pkg, uid, AppHeader.includeAppInfo(this), 0, header, null);
+
+        final Activity activity = getActivity();
+        final Preference pref = FeatureFactory.getFactory(activity)
+            .getApplicationFeatureProvider(activity)
+            .newAppHeaderController(this, null /* appHeader */)
+            .setIcon(mIcon)
+            .setLabel(mLabel)
+            .setPackageName(pkg)
+            .setUid(uid)
+            .setButtonActions(AppHeaderController.ActionType.ACTION_APP_INFO,
+                AppHeaderController.ActionType.ACTION_NONE)
+            .done(activity, getPrefContext());
+        getPreferenceScreen().addPreference(pref);
     }
 
     @Override
-    protected int getMetricsCategory() {
+    public int getMetricsCategory() {
         return MetricsEvent.APP_DATA_USAGE;
     }
 
@@ -375,30 +390,27 @@ public class AppDataUsage extends DataUsageBase implements Preference.OnPreferen
         }
     };
 
-    private class AppPrefLoader extends AsyncTask<String, Void, Preference> {
-        @Override
-        protected Preference doInBackground(String... params) {
-            PackageManager pm = getPackageManager();
-            String pkg = params[0];
-            try {
-                ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-                Preference preference = new Preference(getPrefContext());
-                preference.setIcon(info.loadIcon(pm));
-                preference.setTitle(info.loadLabel(pm));
-                preference.setSelectable(false);
-                return preference;
-            } catch (PackageManager.NameNotFoundException e) {
+    private final LoaderManager.LoaderCallbacks<ArraySet<Preference>> mAppPrefCallbacks =
+        new LoaderManager.LoaderCallbacks<ArraySet<Preference>>() {
+            @Override
+            public Loader<ArraySet<Preference>> onCreateLoader(int i, Bundle bundle) {
+                return new AppPrefLoader(getPrefContext(), mPackages, getPackageManager());
             }
-            return null;
-        }
 
-        @Override
-        protected void onPostExecute(Preference pref) {
-            if (pref != null && mAppList != null) {
-                mAppList.addPreference(pref);
+            @Override
+            public void onLoadFinished(Loader<ArraySet<Preference>> loader,
+                    ArraySet<Preference> preferences) {
+                if (preferences != null && mAppList != null) {
+                    for (Preference preference : preferences) {
+                        mAppList.addPreference(preference);
+                    }
+                }
             }
-        }
-    }
+
+            @Override
+            public void onLoaderReset(Loader<ArraySet<Preference>> loader) {
+            }
+        };
 
     @Override
     public void onDataSaverChanged(boolean isDataSaving) {

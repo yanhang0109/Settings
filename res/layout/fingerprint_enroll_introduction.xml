@@ -15,10 +15,36 @@
     limitations under the License
 -->
 
-<com.android.setupwizardlib.SetupWizardRecyclerLayout
+<com.android.setupwizardlib.GlifLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="?attr/fingerprint_layout_theme"
     android:id="@+id/setup_wizard_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:entries="@xml/fingerprint_enroll_introduction_items"
-    style="?attr/fingerprint_layout_theme" />
+    app:suwFooter="@layout/fingerprint_enroll_introduction_footer">
+
+    <LinearLayout
+        style="@style/SuwContentFrame"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="vertical">
+
+        <com.android.setupwizardlib.view.RichTextView
+            android:id="@+id/description_text"
+            style="@style/SuwDescription.Glif"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/security_settings_fingerprint_enroll_introduction_message" />
+
+        <com.android.setupwizardlib.view.RichTextView
+            android:id="@+id/error_text"
+            style="@style/SuwDescription.Glif"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+    </LinearLayout>
+
+</com.android.setupwizardlib.GlifLayout>

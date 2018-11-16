@@ -20,6 +20,10 @@ import android.os.AsyncTask;
 import android.os.PersistableBundle;
 import android.util.Log;
 import android.util.Xml;
+
+import com.android.settings.core.lifecycle.LifecycleObserver;
+import com.android.settings.core.lifecycle.events.OnPause;
+import com.android.settings.core.lifecycle.events.OnResume;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlSerializer;
@@ -33,7 +37,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class ConditionManager {
+public class ConditionManager implements LifecycleObserver, OnResume, OnPause {
 
     private static final String TAG = "ConditionManager";
 
@@ -58,9 +62,11 @@ public class ConditionManager {
         mContext = context;
         mConditions = new ArrayList<>();
         if (loadConditionsNow) {
+            Log.d(TAG, "conditions loading synchronously");
             ConditionLoader loader = new ConditionLoader();
             loader.onPostExecute(loader.doInBackground());
         } else {
+            Log.d(TAG, "conditions loading asychronously");
             new ConditionLoader().execute();
         }
     }
@@ -142,6 +148,7 @@ public class ConditionManager {
         addIfMissing(CellularDataCondition.class, conditions);
         addIfMissing(BackgroundDataCondition.class, conditions);
         addIfMissing(WorkModeCondition.class, conditions);
+        addIfMissing(NightDisplayCondition.class, conditions);
         Collections.sort(conditions, CONDITION_COMPARATOR);
     }
 
@@ -167,6 +174,8 @@ public class ConditionManager {
             return new BackgroundDataCondition(this);
         } else if (WorkModeCondition.class == clz) {
             return new WorkModeCondition(this);
+        } else if (NightDisplayCondition.class == clz) {
+            return new NightDisplayCondition(this);
         }
         throw new RuntimeException("Unexpected Condition " + clz);
     }
@@ -222,9 +231,24 @@ public class ConditionManager {
         mListeners.remove(listener);
     }
 
+    @Override
+    public void onResume() {
+        for (int i = 0, size = mConditions.size(); i < size; i++) {
+            mConditions.get(i).onResume();
+        }
+    }
+
+    @Override
+    public void onPause() {
+        for (int i = 0, size = mConditions.size(); i < size; i++) {
+            mConditions.get(i).onPause();
+        }
+    }
+
     private class ConditionLoader extends AsyncTask<Void, Void, ArrayList<Condition>> {
         @Override
         protected ArrayList<Condition> doInBackground(Void... params) {
+            Log.d(TAG, "loading conditions from xml");
             ArrayList<Condition> conditions = new ArrayList<>();
             mXmlFile = new File(mContext.getFilesDir(), FILE_NAME);
             if (mXmlFile.exists()) {
@@ -236,12 +260,10 @@ public class ConditionManager {
 
         @Override
         protected void onPostExecute(ArrayList<Condition> conditions) {
+            Log.d(TAG, "conditions loaded from xml, refreshing conditions");
             mConditions.clear();
             mConditions.addAll(conditions);
-            final int N = mListeners.size();
-            for (int i = 0; i < N; i++) {
-                mListeners.get(i).onConditionsChanged();
-            }
+            refreshAll();
         }
     }
 
