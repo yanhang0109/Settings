@@ -17,34 +17,36 @@
 package com.android.settings.deviceinfo;
 
 import static com.google.common.truth.Truth.assertThat;
-
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import android.app.Activity;
-import android.os.storage.StorageManager;
 import android.provider.SearchIndexableResource;
+import androidx.recyclerview.widget.RecyclerView;
+import android.util.SparseArray;
+import android.view.View;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
+import com.android.settings.deviceinfo.storage.CachedStorageValuesHelper;
+import com.android.settings.deviceinfo.storage.StorageAsyncLoader;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settingslib.deviceinfo.PrivateStorageInfo;
 import com.android.settingslib.drawer.CategoryKey;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Answers;
-import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.RuntimeEnvironment;
 
 import java.util.List;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class StorageDashboardFragmentTest {
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
-    private StorageManager mStorageManager;
 
     private StorageDashboardFragment mFragment;
 
@@ -69,11 +71,132 @@ public class StorageDashboardFragmentTest {
     }
 
     @Test
+    public void test_cacheProviderProvidesValuesIfBothCached() {
+        CachedStorageValuesHelper helper = mock(CachedStorageValuesHelper.class);
+        PrivateStorageInfo info = new PrivateStorageInfo(0, 0);
+        when(helper.getCachedPrivateStorageInfo()).thenReturn(info);
+        SparseArray<StorageAsyncLoader.AppsStorageResult> result = new SparseArray<>();
+        when(helper.getCachedAppsStorageResult()).thenReturn(result);
+
+        mFragment.setCachedStorageValuesHelper(helper);
+        mFragment.initializeCachedValues();
+
+        assertThat(mFragment.getPrivateStorageInfo()).isEqualTo(info);
+        assertThat(mFragment.getAppsStorageResult()).isEqualTo(result);
+    }
+
+    @Test
+    public void test_cacheProviderDoesntProvideValuesIfAppsMissing() {
+        CachedStorageValuesHelper helper = mock(CachedStorageValuesHelper.class);
+        PrivateStorageInfo info = new PrivateStorageInfo(0, 0);
+        when(helper.getCachedPrivateStorageInfo()).thenReturn(info);
+
+        mFragment.setCachedStorageValuesHelper(helper);
+        mFragment.initializeCachedValues();
+
+        assertThat(mFragment.getPrivateStorageInfo()).isNull();
+        assertThat(mFragment.getAppsStorageResult()).isNull();
+    }
+
+    @Test
+    public void test_cacheProviderDoesntProvideValuesIfVolumeInfoMissing() {
+        CachedStorageValuesHelper helper = mock(CachedStorageValuesHelper.class);
+        SparseArray<StorageAsyncLoader.AppsStorageResult> result = new SparseArray<>();
+        when(helper.getCachedAppsStorageResult()).thenReturn(result);
+
+        mFragment.setCachedStorageValuesHelper(helper);
+        mFragment.initializeCachedValues();
+
+        assertThat(mFragment.getPrivateStorageInfo()).isNull();
+        assertThat(mFragment.getAppsStorageResult()).isNull();
+    }
+
+    @Test
+    public void test_loadWhenQuotaOffIfVolumeInfoNotLoaded() {
+        View fakeView = mock(View.class, RETURNS_DEEP_STUBS);
+        RecyclerView fakeRecyclerView = mock(RecyclerView.class, RETURNS_DEEP_STUBS);
+        when(fakeView.findViewById(anyInt())).thenReturn(fakeView);
+        mFragment = spy(mFragment);
+        when(mFragment.getView()).thenReturn(fakeView);
+        when(mFragment.getListView()).thenReturn(fakeRecyclerView);
+
+        mFragment.maybeSetLoading(false);
+
+        verify(mFragment).setLoading(true, false);
+    }
+
+    @Test
+    public void test_dontLoadWhenQuotaOffIfVolumeInfoNotLoaded() {
+        View fakeView = mock(View.class, RETURNS_DEEP_STUBS);
+        RecyclerView fakeRecyclerView = mock(RecyclerView.class, RETURNS_DEEP_STUBS);
+        when(fakeView.findViewById(anyInt())).thenReturn(fakeView);
+        mFragment = spy(mFragment);
+        when(mFragment.getView()).thenReturn(fakeView);
+        when(mFragment.getListView()).thenReturn(fakeRecyclerView);
+
+        PrivateStorageInfo info = new PrivateStorageInfo(0, 0);
+        mFragment.setPrivateStorageInfo(info);
+
+        mFragment.maybeSetLoading(false);
+
+        verify(mFragment, never()).setLoading(true, false);
+    }
+
+    @Test
+    public void test_loadWhenQuotaOnAndVolumeInfoLoadedButAppsMissing() {
+        View fakeView = mock(View.class, RETURNS_DEEP_STUBS);
+        RecyclerView fakeRecyclerView = mock(RecyclerView.class, RETURNS_DEEP_STUBS);
+        when(fakeView.findViewById(anyInt())).thenReturn(fakeView);
+        mFragment = spy(mFragment);
+        when(mFragment.getView()).thenReturn(fakeView);
+        when(mFragment.getListView()).thenReturn(fakeRecyclerView);
+
+        PrivateStorageInfo info = new PrivateStorageInfo(0, 0);
+        mFragment.setPrivateStorageInfo(info);
+
+        mFragment.maybeSetLoading(true);
+
+        verify(mFragment).setLoading(true, false);
+    }
+
+    @Test
+    public void test_loadWhenQuotaOnAndAppsLoadedButVolumeInfoMissing() {
+        View fakeView = mock(View.class, RETURNS_DEEP_STUBS);
+        RecyclerView fakeRecyclerView = mock(RecyclerView.class, RETURNS_DEEP_STUBS);
+        when(fakeView.findViewById(anyInt())).thenReturn(fakeView);
+        mFragment = spy(mFragment);
+        when(mFragment.getView()).thenReturn(fakeView);
+        when(mFragment.getListView()).thenReturn(fakeRecyclerView);
+        mFragment.setAppsStorageResult(new SparseArray<>());
+
+        mFragment.maybeSetLoading(true);
+
+        verify(mFragment).setLoading(true, false);
+    }
+
+    @Test
+    public void test_dontLoadWhenQuotaOnAndAllLoaded() {
+        View fakeView = mock(View.class, RETURNS_DEEP_STUBS);
+        RecyclerView fakeRecyclerView = mock(RecyclerView.class, RETURNS_DEEP_STUBS);
+        when(fakeView.findViewById(anyInt())).thenReturn(fakeView);
+        mFragment = spy(mFragment);
+        when(mFragment.getView()).thenReturn(fakeView);
+        when(mFragment.getListView()).thenReturn(fakeRecyclerView);
+
+        mFragment.setAppsStorageResult(new SparseArray<>());
+        PrivateStorageInfo storageInfo = new PrivateStorageInfo(0, 0);
+        mFragment.setPrivateStorageInfo(storageInfo);
+
+        mFragment.maybeSetLoading(true);
+
+        verify(mFragment, never()).setLoading(true, false);
+    }
+
+    @Test
     public void testSearchIndexProvider_shouldIndexResource() {
         final List<SearchIndexableResource> indexRes =
-                StorageDashboardFragment.SEARCH_INDEX_DATA_PROVIDER.getXmlResourcesToIndex(
-                        ShadowApplication.getInstance().getApplicationContext(),
-                        true /* enabled */);
+                StorageDashboardFragment.SEARCH_INDEX_DATA_PROVIDER
+                    .getXmlResourcesToIndex(RuntimeEnvironment.application, true /* enabled */);
 
         assertThat(indexRes).isNotNull();
         assertThat(indexRes.get(0).xmlResId).isEqualTo(mFragment.getPreferenceScreenResId());

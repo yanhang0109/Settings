@@ -16,30 +16,27 @@
 
 package com.android.settings.notification;
 
-import android.content.Context;
-import android.preference.SeekBarVolumizer;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
+import android.content.Context;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class VolumeSeekBarPreferenceControllerTest {
 
     @Mock
@@ -50,15 +47,19 @@ public class VolumeSeekBarPreferenceControllerTest {
     private VolumeSeekBarPreference mPreference;
     @Mock
     private VolumeSeekBarPreference.Callback mCallback;
+    @Mock
+    private AudioHelper mHelper;
 
     private VolumeSeekBarPreferenceControllerTestable mController;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        when(mScreen.findPreference(anyString())).thenReturn(mPreference);
-        mController =
-            new VolumeSeekBarPreferenceControllerTestable(mContext, mCallback);
+        when(mScreen.findPreference(nullable(String.class))).thenReturn(mPreference);
+        when(mPreference.getKey()).thenReturn("key");
+        mController = new VolumeSeekBarPreferenceControllerTestable(mContext, mCallback,
+                mPreference.getKey());
+        mController.setAudioHelper(mHelper);
     }
 
     @Test
@@ -66,14 +67,14 @@ public class VolumeSeekBarPreferenceControllerTest {
         mController.displayPreference(mScreen);
 
         verify(mPreference).setCallback(mCallback);
-        verify(mPreference).setStream(mController.AUDIO_STREAM);
-        verify(mPreference).setMuteIcon(mController.MUTE_ICON);
+        verify(mPreference).setStream(VolumeSeekBarPreferenceControllerTestable.AUDIO_STREAM);
+        verify(mPreference).setMuteIcon(VolumeSeekBarPreferenceControllerTestable.MUTE_ICON);
     }
 
     @Test
     public void displayPreference_notAvailable_shouldNotUpdatePreference() {
-        mController =
-            new VolumeSeekBarPreferenceControllerTestable(mContext, mCallback, false);
+        mController = new VolumeSeekBarPreferenceControllerTestable(mContext, mCallback, false,
+                mPreference.getKey());
 
         mController.displayPreference(mScreen);
 
@@ -100,8 +101,44 @@ public class VolumeSeekBarPreferenceControllerTest {
         verify(mPreference).onActivityPause();
     }
 
-    private class VolumeSeekBarPreferenceControllerTestable extends
-        VolumeSeekBarPreferenceController {
+    @Test
+    public void sliderMethods_handleNullPreference() {
+        when(mHelper.getStreamVolume(mController.getAudioStream())).thenReturn(4);
+        when(mHelper.getMaxVolume(mController.getAudioStream())).thenReturn(10);
+
+        assertThat(mController.getMaxSteps()).isEqualTo(10);
+        assertThat(mController.getSliderPosition()).isEqualTo(4);
+
+        mController.setSliderPosition(9);
+        verify(mHelper).setStreamVolume(mController.getAudioStream(), 9);
+    }
+
+    @Test
+    public void setSliderPosition_passesAlongValue() {
+        mController.displayPreference(mScreen);
+
+        mController.setSliderPosition(2);
+        verify(mPreference).setProgress(2);
+    }
+
+    @Test
+    public void getMaxSteps_passesAlongValue() {
+        when(mPreference.getMax()).thenReturn(6);
+        mController.displayPreference(mScreen);
+
+        assertThat(mController.getMaxSteps()).isEqualTo(6);
+    }
+
+    @Test
+    public void getSliderPosition_passesAlongValue() {
+        when(mPreference.getProgress()).thenReturn(7);
+        mController.displayPreference(mScreen);
+
+        assertThat(mController.getSliderPosition()).isEqualTo(7);
+    }
+
+    private class VolumeSeekBarPreferenceControllerTestable
+        extends VolumeSeekBarPreferenceController {
 
         private final static int AUDIO_STREAM = 1;
         private final static int MUTE_ICON = 2;
@@ -109,19 +146,20 @@ public class VolumeSeekBarPreferenceControllerTest {
         private boolean mAvailable;
 
         VolumeSeekBarPreferenceControllerTestable(Context context,
-            VolumeSeekBarPreference.Callback callback) {
-            this(context, callback, true);
+            VolumeSeekBarPreference.Callback callback, String key) {
+            this(context, callback, true, key);
         }
 
         VolumeSeekBarPreferenceControllerTestable(Context context,
-            VolumeSeekBarPreference.Callback callback, boolean available) {
-            super(context, callback, null);
+            VolumeSeekBarPreference.Callback callback, boolean available, String key) {
+            super(context, key);
+            setCallback(callback);
             mAvailable = available;
         }
 
         @Override
         public String getPreferenceKey() {
-            return null;
+            return "key";
         }
 
         @Override
@@ -130,8 +168,8 @@ public class VolumeSeekBarPreferenceControllerTest {
         }
 
         @Override
-        public boolean isAvailable() {
-            return mAvailable;
+        public int getAvailabilityStatus() {
+            return mAvailable ? AVAILABLE : UNSUPPORTED_ON_DEVICE;
         }
 
         @Override
@@ -143,10 +181,5 @@ public class VolumeSeekBarPreferenceControllerTest {
         public int getMuteIcon() {
             return MUTE_ICON;
         }
-
-        private void setAvailable(boolean available) {
-
-        }
     }
-
 }

@@ -16,37 +16,35 @@
 
 package com.android.settings.gestures;
 
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 import android.provider.SearchIndexableResource;
 
 import com.android.settings.R;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.RuntimeEnvironment;
 
 import java.util.List;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.when;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class AssistGestureSettingsTest {
-    @Mock
-    private Context mContext;
+
+    private FakeFeatureFactory mFakeFeatureFactory;
     private AssistGestureSettings mSettings;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
+        mFakeFeatureFactory = FakeFeatureFactory.setupForTest();
         mSettings = new AssistGestureSettings();
     }
 
@@ -57,21 +55,22 @@ public class AssistGestureSettingsTest {
     }
 
     @Test
-    public void testGetPreferenceControllers_shouldAllBeCreated() {
-        final List<PreferenceController> controllers =
-            mSettings.getPreferenceControllers(mContext);
-        assertThat(controllers.isEmpty()).isFalse();
-    }
-
-    @Test
     public void testSearchIndexProvider_shouldIndexResource() {
         final List<SearchIndexableResource> indexRes =
                 AssistGestureSettings.SEARCH_INDEX_DATA_PROVIDER.getXmlResourcesToIndex(
-                        ShadowApplication.getInstance().getApplicationContext(),
-                        true /* enabled */);
+                    RuntimeEnvironment.application, true /* enabled */);
 
         assertThat(indexRes).isNotNull();
         assertThat(indexRes.get(0).xmlResId).isEqualTo(mSettings.getPreferenceScreenResId());
     }
-}
 
+    @Test
+    public void testSearchIndexProvider_noSensor_shouldDisablePageSearch() {
+        when(mFakeFeatureFactory.assistGestureFeatureProvider.isSensorAvailable(any(Context.class)))
+                .thenReturn(false);
+
+        assertThat(AssistGestureSettings.SEARCH_INDEX_DATA_PROVIDER.getNonIndexableKeys(
+                RuntimeEnvironment.application))
+                .contains("gesture_assist_settings_page");
+    }
+}

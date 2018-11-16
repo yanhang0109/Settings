@@ -17,15 +17,19 @@
 package com.android.settings.datetime;
 
 import android.content.Context;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import android.util.FeatureFlagUtils;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.RestrictedPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
 import com.android.settingslib.datetime.ZoneGetter;
 
 import java.util.Calendar;
 
-public class TimeZonePreferenceController extends PreferenceController {
+public class TimeZonePreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     private static final String KEY_TIMEZONE = "timezone";
 
@@ -39,8 +43,13 @@ public class TimeZonePreferenceController extends PreferenceController {
 
     @Override
     public void updateState(Preference preference) {
+        if (!(preference instanceof RestrictedPreference)) {
+            return;
+        }
         preference.setSummary(getTimeZoneOffsetAndName());
-        preference.setEnabled(!mAutoTimeZonePreferenceController.isEnabled());
+        if( !((RestrictedPreference) preference).isDisabledByAdmin()) {
+            preference.setEnabled(!mAutoTimeZonePreferenceController.isEnabled());
+        }
     }
 
     @Override

@@ -18,33 +18,36 @@ package com.android.settings.deviceinfo;
 
 import android.app.Activity;
 import android.app.Fragment;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import android.text.BidiFormatter;
 import android.text.TextUtils;
 import android.util.Pair;
 import android.widget.Toast;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import com.android.settings.ChooseLockSettingsHelper;
 import com.android.settings.R;
 import com.android.settings.Utils;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnResume;
-import com.android.settings.development.DevelopmentSettings;
-import com.android.settings.development.DevelopmentSettingsEnabler;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settings.overlay.FeatureFactory;
+import com.android.settings.password.ChooseLockSettingsHelper;
 import com.android.settingslib.RestrictedLockUtils;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnResume;
+import com.android.settingslib.development.DevelopmentSettingsEnabler;
 
-public class BuildNumberPreferenceController extends PreferenceController
-        implements LifecycleObserver, OnResume {
+public class BuildNumberPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin, LifecycleObserver, OnResume {
 
     static final int TAPS_TO_BE_A_DEVELOPER = 7;
     static final int REQUEST_CONFIRM_PASSWORD_FOR_DEV_PREF = 100;
@@ -80,7 +83,7 @@ public class BuildNumberPreferenceController extends PreferenceController
         final Preference preference = screen.findPreference(KEY_BUILD_NUMBER);
         if (preference != null) {
             try {
-                preference.setSummary(Build.DISPLAY);
+                preference.setSummary(BidiFormatter.getInstance().unicodeWrap(Build.DISPLAY));
                 preference.setEnabled(true);
             } catch (Exception e) {
                 preference.setSummary(R.string.device_info_default);
@@ -104,9 +107,8 @@ public class BuildNumberPreferenceController extends PreferenceController
                 mContext, UserManager.DISALLOW_DEBUGGING_FEATURES, UserHandle.myUserId());
         mDebuggingFeaturesDisallowedBySystem = RestrictedLockUtils.hasBaseUserRestriction(
                 mContext, UserManager.DISALLOW_DEBUGGING_FEATURES, UserHandle.myUserId());
-        mDevHitCountdown = mContext.getSharedPreferences(DevelopmentSettings.PREF_FILE,
-                Context.MODE_PRIVATE).getBoolean(DevelopmentSettings.PREF_SHOW,
-                android.os.Build.TYPE.equals("eng")) ? -1 : TAPS_TO_BE_A_DEVELOPER;
+        mDevHitCountdown = DevelopmentSettingsEnabler.isDevelopmentSettingsEnabled(mContext)
+                ? -1 : TAPS_TO_BE_A_DEVELOPER;
         mDevHitToast = null;
     }
 
@@ -115,8 +117,11 @@ public class BuildNumberPreferenceController extends PreferenceController
         if (!TextUtils.equals(preference.getKey(), KEY_BUILD_NUMBER)) {
             return false;
         }
-        // Don't enable developer options for secondary users.
-        if (!mUm.isAdminUser()) {
+        if (Utils.isMonkeyRunning()) {
+            return false;
+        }
+        // Don't enable developer options for secondary non-demo users.
+        if (!(mUm.isAdminUser() || mUm.isDemoUser())) {
             mMetricsFeatureProvider.action(
                     mContext, MetricsEvent.ACTION_SETTINGS_BUILD_NUMBER_PREF);
             return false;
@@ -130,6 +135,21 @@ public class BuildNumberPreferenceController extends PreferenceController
         }
 
         if (mUm.hasUserRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES)) {
+            if (mUm.isDemoUser()) {
+                // Route to demo device owner to lift the debugging restriction.
+                final ComponentName componentName = Utils.getDeviceOwnerComponent(mContext);
+                if (componentName != null) {
+                    final Intent requestDebugFeatures = new Intent()
+                            .setPackage(componentName.getPackageName())
+                            .setAction("com.android.settings.action.REQUEST_DEBUG_FEATURES");
+                    final ResolveInfo resolveInfo = mContext.getPackageManager().resolveActivity(
+                        requestDebugFeatures, 0);
+                    if (resolveInfo != null) {
+                        mContext.startActivity(requestDebugFeatures);
+                        return false;
+                    }
+                }
+            }
             if (mDebuggingFeaturesDisallowedAdmin != null &&
                     !mDebuggingFeaturesDisallowedBySystem) {
                 RestrictedLockUtils.sendShowAdminSupportDetailsIntent(mContext,
@@ -210,18 +230,12 @@ public class BuildNumberPreferenceController extends PreferenceController
     private void enableDevelopmentSettings() {
         mDevHitCountdown = 0;
         mProcessingLastDevHit = false;
-        DevelopmentSettingsEnabler.enableDevelopmentSettings(mContext,
-                mContext.getSharedPreferences(DevelopmentSettings.PREF_FILE,
-                        Context.MODE_PRIVATE));
+        DevelopmentSettingsEnabler.setDevelopmentSettingsEnabled(mContext, true);
         if (mDevHitToast != null) {
             mDevHitToast.cancel();
         }
         mDevHitToast = Toast.makeText(mContext, R.string.show_dev_on,
                 Toast.LENGTH_LONG);
         mDevHitToast.show();
-        // This is good time to index the Developer Options
-        FeatureFactory.getFactory(mContext).getSearchFeatureProvider().getIndexingManager(mContext)
-                .updateFromClassNameResource(DevelopmentSettings.class.getName(),
-                        true /* includeInSearchResults */);
     }
 }

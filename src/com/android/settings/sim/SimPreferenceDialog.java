@@ -40,6 +40,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 
 import com.android.settings.R;
+import com.android.settings.Utils;
 
 public class SimPreferenceDialog extends Activity {
 
@@ -98,13 +99,14 @@ public class SimPreferenceDialog extends Activity {
 
         EditText nameText = (EditText)mDialogLayout.findViewById(R.id.sim_name);
         nameText.setText(savedInstanceState.getString(SIM_NAME));
+        Utils.setEditTextCursorPosition(nameText);
     }
 
     private void createEditDialog(Bundle bundle) {
         final Resources res = mContext.getResources();
         EditText nameText = (EditText)mDialogLayout.findViewById(R.id.sim_name);
         nameText.setText(mSubInfoRecord.getDisplayName());
-
+        Utils.setEditTextCursorPosition(nameText);
         final Spinner tintSpinner = (Spinner) mDialogLayout.findViewById(R.id.spinner);
         SelectColorAdapter adapter = new SelectColorAdapter(mContext,
                 R.layout.settings_color_picker_item, mColorStrings);
@@ -154,7 +156,7 @@ public class SimPreferenceDialog extends Activity {
             @Override
             public void onClick(DialogInterface dialog, int whichButton) {
                 final EditText nameText = (EditText)mDialogLayout.findViewById(R.id.sim_name);
-
+                Utils.setEditTextCursorPosition(nameText);
                 String displayName = nameText.getText().toString();
                 int subId = mSubInfoRecord.getSubscriptionId();
                 mSubInfoRecord.setDisplayName(displayName);
@@ -167,7 +169,6 @@ public class SimPreferenceDialog extends Activity {
                 mSubInfoRecord.setIconTint(tint);
                 mSubscriptionManager.setIconTint(tint, subscriptionId);
                 dialog.dismiss();
-                finish();
             }
         });
 
@@ -175,8 +176,14 @@ public class SimPreferenceDialog extends Activity {
             @Override
             public void onClick(DialogInterface dialog, int whichButton) {
                 dialog.dismiss();
-                finish();
             }
+        });
+
+        mBuilder.setOnDismissListener(new DialogInterface.OnDismissListener() {
+           @Override
+           public void onDismiss(DialogInterface dialogInListener) {
+               finish();
+           }
         });
 
         mBuilder.create().show();

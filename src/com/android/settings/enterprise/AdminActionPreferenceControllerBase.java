@@ -15,16 +15,18 @@
 package com.android.settings.enterprise;
 
 import android.content.Context;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.text.format.DateUtils;
 
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.Date;
 
-public abstract class AdminActionPreferenceControllerBase extends PreferenceController {
+public abstract class AdminActionPreferenceControllerBase extends
+        AbstractPreferenceController implements PreferenceControllerMixin {
 
     protected final EnterprisePrivacyFeatureProvider mFeatureProvider;
 

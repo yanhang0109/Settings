@@ -14,65 +14,67 @@
 package com.android.settings.display;
 
 import android.content.Context;
+import android.content.Intent;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import android.text.TextUtils;
 
-import android.util.ArrayMap;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.search2.InlineSwitchPayload;
-import com.android.settings.search2.ResultPayload;
-
-import java.util.Map;
+import com.android.settings.DisplaySettings;
+import com.android.settings.core.TogglePreferenceController;
+import com.android.settings.search.DatabaseIndexingUtils;
+import com.android.settings.search.InlineSwitchPayload;
+import com.android.settings.search.ResultPayload;
+import com.android.settings.R;
 
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC;
 import static android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL;
 
 
-public class AutoBrightnessPreferenceController extends PreferenceController implements
-        Preference.OnPreferenceChangeListener {
+public class AutoBrightnessPreferenceController extends TogglePreferenceController {
 
-    private final String mAutoBrightnessKey;
+    private final String SYSTEM_KEY = SCREEN_BRIGHTNESS_MODE;
+    private final int DEFAULT_VALUE = SCREEN_BRIGHTNESS_MODE_MANUAL;
 
     public AutoBrightnessPreferenceController(Context context, String key) {
-        super(context);
-        mAutoBrightnessKey = key;
+        super(context, key);
     }
 
     @Override
-    public boolean isAvailable() {
-        return mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_automatic_brightness_available);
+    public boolean isChecked() {
+        return Settings.System.getInt(mContext.getContentResolver(),
+                SYSTEM_KEY, DEFAULT_VALUE) != DEFAULT_VALUE;
     }
 
     @Override
-    public String getPreferenceKey() {
-        return mAutoBrightnessKey;
-    }
-
-    @Override
-    public void updateState(Preference preference) {
-        int brightnessMode = Settings.System.getInt(mContext.getContentResolver(),
-                SCREEN_BRIGHTNESS_MODE, SCREEN_BRIGHTNESS_MODE_MANUAL);
-        ((SwitchPreference) preference).setChecked(brightnessMode != SCREEN_BRIGHTNESS_MODE_MANUAL);
-    }
-
-    @Override
-    public boolean onPreferenceChange(Preference preference, Object newValue) {
-        boolean auto = (Boolean) newValue;
-        Settings.System.putInt(mContext.getContentResolver(), SCREEN_BRIGHTNESS_MODE,
-                auto ? SCREEN_BRIGHTNESS_MODE_AUTOMATIC : SCREEN_BRIGHTNESS_MODE_MANUAL);
+    public boolean setChecked(boolean isChecked) {
+        Settings.System.putInt(mContext.getContentResolver(), SYSTEM_KEY,
+                isChecked ? SCREEN_BRIGHTNESS_MODE_AUTOMATIC : DEFAULT_VALUE);
         return true;
     }
 
     @Override
-    public ResultPayload getResultPayload() {
-        final Map<Integer, Boolean> valueMap = new ArrayMap<>();
-        valueMap.put(SCREEN_BRIGHTNESS_MODE_AUTOMATIC, true);
-        valueMap.put(SCREEN_BRIGHTNESS_MODE_MANUAL, false);
+    @AvailabilityStatus
+    public int getAvailabilityStatus() {
+        return mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_automatic_brightness_available)
+                ? AVAILABLE
+                : UNSUPPORTED_ON_DEVICE;
+    }
 
-        return new InlineSwitchPayload(SCREEN_BRIGHTNESS_MODE,
-                ResultPayload.SettingsSource.SYSTEM, valueMap);
+    @Override
+    public boolean isSliceable() {
+        return TextUtils.equals(getPreferenceKey(), "auto_brightness");
+    }
+
+    @Override
+    public ResultPayload getResultPayload() {
+        // TODO remove result payload
+        final Intent intent = DatabaseIndexingUtils.buildSearchResultPageIntent(mContext,
+                DisplaySettings.class.getName(), getPreferenceKey(),
+                mContext.getString(R.string.display_settings));
+
+        return new InlineSwitchPayload(SYSTEM_KEY,
+                ResultPayload.SettingsSource.SYSTEM, SCREEN_BRIGHTNESS_MODE_AUTOMATIC, intent,
+                isAvailable(), DEFAULT_VALUE);
     }
 }

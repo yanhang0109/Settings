@@ -19,18 +19,20 @@ package com.android.settings.inputmethod;
 import android.app.admin.DevicePolicyManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.text.BidiFormatter;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class VirtualKeyboardPreferenceController extends PreferenceController {
+public class VirtualKeyboardPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     private final InputMethodManager mImm;
     private final DevicePolicyManager mDpm;
@@ -45,7 +47,7 @@ public class VirtualKeyboardPreferenceController extends PreferenceController {
 
     @Override
     public boolean isAvailable() {
-        return true;
+        return mContext.getResources().getBoolean(R.bool.config_show_virtual_keyboard_pref);
     }
 
     @Override

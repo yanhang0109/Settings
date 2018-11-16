@@ -24,7 +24,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
-import android.support.annotation.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
 
 /**
  * BluetoothPairingDialog asks the user to enter a PIN / Passkey / simple confirmation
@@ -108,12 +108,6 @@ public class BluetoothPairingDialog extends Activity {
     @VisibleForTesting
     void dismiss() {
         if (!isFinishing()) {
-            BluetoothPairingDialogFragment bluetoothFragment =
-                (BluetoothPairingDialogFragment) getFragmentManager()
-                    .findFragmentByTag(FRAGMENT_TAG);
-            if (bluetoothFragment != null) {
-                bluetoothFragment.dismiss();
-            }
             finish();
         }
     }

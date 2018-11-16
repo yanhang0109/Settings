@@ -18,7 +18,8 @@ package com.android.settings.search;
 
 import android.content.Context;
 import android.provider.SearchIndexableResource;
-import com.android.settings.core.PreferenceController;
+
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.List;
 
@@ -30,7 +31,6 @@ import java.util.List;
  * {@link Indexable.SearchIndexProvider} interface.
  *
  * See {@link android.provider.SearchIndexableResource} and {@link SearchIndexableRaw}.
- *
  */
 public interface Indexable {
 
@@ -40,12 +40,11 @@ public interface Indexable {
          *
          * See {@link android.provider.SearchIndexableResource}
          *
-         *
          * @param context the context.
          * @param enabled hint telling if the data needs to be considered into the search results
          *                or not.
          * @return a list of {@link android.provider.SearchIndexableResource} references.
-         *         Can be null.
+         * Can be null.
          */
         List<SearchIndexableResource> getXmlResourcesToIndex(Context context, boolean enabled);
 
@@ -68,9 +67,9 @@ public interface Indexable {
         List<String> getNonIndexableKeys(Context context);
 
         /**
-         * @param context
-         * @return a list of {@link PreferenceController} for ResultPayload data during Indexing.
+         * @return a list of {@link AbstractPreferenceController} for ResultPayload data during
+         * Indexing.
          */
-        List<PreferenceController> getPreferenceControllers(Context context);
+        List<AbstractPreferenceController> getPreferenceControllers(Context context);
     }
 }

@@ -16,42 +16,42 @@
 
 package com.android.settings.wifi;
 
+import android.annotation.Nullable;
+import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
-import android.content.res.Resources;
 import android.icu.text.Collator;
-import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
-import android.net.wifi.hotspot2.PasspointConfiguration;
 import android.os.Bundle;
-import android.provider.SearchIndexableResource;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import android.os.Handler;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
-import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.search.Indexable;
-import com.android.settings.search.SearchIndexableRaw;
 import com.android.settingslib.wifi.AccessPoint;
 import com.android.settingslib.wifi.AccessPointPreference;
 import com.android.settingslib.wifi.WifiSavedConfigUtils;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
 /**
  * UI to manage saved networks/access points.
+ * TODO(b/64806699): convert to {@link DashboardFragment} with {@link PreferenceController}s
  */
 public class SavedAccessPointsWifiSettings extends SettingsPreferenceFragment
         implements Indexable, WifiDialog.WifiDialogListener {
-    private static final String TAG = "SavedAccessPointsWifiSettings";
+    private static final String TAG = "SavedAccessPoints";
+    @VisibleForTesting
+    static final int MSG_UPDATE_PREFERENCES = 1;
     private static final Comparator<AccessPoint> SAVED_NETWORK_COMPARATOR =
             new Comparator<AccessPoint>() {
         final Collator mCollator = Collator.getInstance();
@@ -66,15 +66,42 @@ public class SavedAccessPointsWifiSettings extends SettingsPreferenceFragment
         }
     };
 
-    private final WifiManager.ActionListener mForgetListener = new WifiManager.ActionListener() {
+    @VisibleForTesting
+    final WifiManager.ActionListener mForgetListener = new WifiManager.ActionListener() {
         @Override
         public void onSuccess() {
-            initPreferences();
+            postUpdatePreference();
         }
 
         @Override
         public void onFailure(int reason) {
-            initPreferences();
+            postUpdatePreference();
+        }
+    };
+
+    @VisibleForTesting
+    final Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(android.os.Message msg) {
+            if (msg.what == MSG_UPDATE_PREFERENCES) {
+                initPreferences();
+            }
+        }
+    };
+
+    private final WifiManager.ActionListener mSaveListener = new WifiManager.ActionListener() {
+        @Override
+        public void onSuccess() {
+            postUpdatePreference();
+        }
+        @Override
+        public void onFailure(int reason) {
+            Activity activity = getActivity();
+            if (activity != null) {
+                Toast.makeText(activity,
+                    R.string.wifi_failed_save_message,
+                    Toast.LENGTH_SHORT).show();
+            }
         }
     };
 
@@ -83,6 +110,7 @@ public class SavedAccessPointsWifiSettings extends SettingsPreferenceFragment
     private AccessPoint mDlgAccessPoint;
     private Bundle mAccessPointSavedState;
     private AccessPoint mSelectedAccessPoint;
+    private Preference mAddNetworkPreference;
 
     private AccessPointPreference.UserBadgeCache mUserBadgeCache;
 
@@ -127,30 +155,59 @@ public class SavedAccessPointsWifiSettings extends SettingsPreferenceFragment
         final List<AccessPoint> accessPoints =
                 WifiSavedConfigUtils.getAllConfigs(context, mWifiManager);
         Collections.sort(accessPoints, SAVED_NETWORK_COMPARATOR);
-        preferenceScreen.removeAll();
+        cacheRemoveAllPrefs(preferenceScreen);
 
         final int accessPointsSize = accessPoints.size();
-        for (int i = 0; i < accessPointsSize; ++i){
+        for (int i = 0; i < accessPointsSize; ++i) {
+            AccessPoint ap = accessPoints.get(i);
+            String key = ap.getKey();
             LongPressAccessPointPreference preference =
-                    new LongPressAccessPointPreference(accessPoints.get(i), context,
-                            mUserBadgeCache, true, this);
-            preference.setIcon(null);
-            preferenceScreen.addPreference(preference);
+                    (LongPressAccessPointPreference) getCachedPreference(key);
+            if (preference == null) {
+                preference = new LongPressAccessPointPreference(
+                        ap, context, mUserBadgeCache, true, this);
+                preference.setKey(key);
+                preference.setIcon(null);
+                preferenceScreen.addPreference(preference);
+            }
+            preference.setOrder(i);
         }
+
+        removeCachedPrefs(preferenceScreen);
+
+        if (mAddNetworkPreference == null) {
+            mAddNetworkPreference = new Preference(getPrefContext());
+            mAddNetworkPreference.setIcon(R.drawable.ic_menu_add_inset);
+            mAddNetworkPreference.setTitle(R.string.wifi_add_network);
+        }
+        mAddNetworkPreference.setOrder(accessPointsSize);
+        preferenceScreen.addPreference(mAddNetworkPreference);
 
         if(getPreferenceScreen().getPreferenceCount() < 1) {
             Log.w(TAG, "Saved networks activity loaded, but there are no saved networks!");
         }
     }
 
-    private void showDialog(LongPressAccessPointPreference accessPoint, boolean edit) {
+    private void postUpdatePreference() {
+        if (!mHandler.hasMessages(MSG_UPDATE_PREFERENCES)) {
+            mHandler.sendEmptyMessage(MSG_UPDATE_PREFERENCES);
+        }
+    }
+
+    private void showWifiDialog(@Nullable LongPressAccessPointPreference accessPoint) {
         if (mDialog != null) {
             removeDialog(WifiSettings.WIFI_DIALOG_ID);
             mDialog = null;
         }
 
-        // Save the access point and edit mode
-        mDlgAccessPoint = accessPoint.getAccessPoint();
+        if (accessPoint != null) {
+            // Save the access point and edit mode
+            mDlgAccessPoint = accessPoint.getAccessPoint();
+        } else {
+            // No access point is selected. Clear saved state.
+            mDlgAccessPoint = null;
+            mAccessPointSavedState = null;
+        }
 
         showDialog(WifiSettings.WIFI_DIALOG_ID);
     }
@@ -159,17 +216,24 @@ public class SavedAccessPointsWifiSettings extends SettingsPreferenceFragment
     public Dialog onCreateDialog(int dialogId) {
         switch (dialogId) {
             case WifiSettings.WIFI_DIALOG_ID:
-                if (mDlgAccessPoint == null) { // For re-launch from saved state
-                    mDlgAccessPoint = new AccessPoint(getActivity(), mAccessPointSavedState);
-                    // Reset the saved access point data
-                    mAccessPointSavedState = null;
+                if (mDlgAccessPoint == null && mAccessPointSavedState == null) {
+                    // Add new network
+                    mDialog = WifiDialog.createFullscreen(getActivity(), this, null,
+                            WifiConfigUiBase.MODE_CONNECT);
+                } else {
+                    // Modify network
+                    if (mDlgAccessPoint == null) {
+                        // Restore AP from save state
+                        mDlgAccessPoint = new AccessPoint(getActivity(), mAccessPointSavedState);
+                        // Reset the saved access point data
+                        mAccessPointSavedState = null;
+                    }
+                    mDialog = WifiDialog.createModal(getActivity(), this, mDlgAccessPoint,
+                            WifiConfigUiBase.MODE_VIEW);
                 }
                 mSelectedAccessPoint = mDlgAccessPoint;
 
-                mDialog = new WifiDialog(getActivity(), this, mDlgAccessPoint,
-                        WifiConfigUiBase.MODE_VIEW, true /* hide the submit button */);
                 return mDialog;
-
         }
         return super.onCreateDialog(dialogId);
     }
@@ -209,7 +273,7 @@ public class SavedAccessPointsWifiSettings extends SettingsPreferenceFragment
                     Log.e(TAG, "Failed to remove Passpoint configuration for "
                             + mSelectedAccessPoint.getConfigName());
                 }
-                initPreferences();
+                postUpdatePreference();
             } else {
                 // mForgetListener will call initPreferences upon completion
                 mWifiManager.forget(mSelectedAccessPoint.getConfig().networkId, mForgetListener);
@@ -220,59 +284,19 @@ public class SavedAccessPointsWifiSettings extends SettingsPreferenceFragment
 
     @Override
     public void onSubmit(WifiDialog dialog) {
-        // Ignored
+        mWifiManager.save(dialog.getController().getConfig(), mSaveListener);
     }
 
     @Override
     public boolean onPreferenceTreeClick(Preference preference) {
         if (preference instanceof LongPressAccessPointPreference) {
-            showDialog((LongPressAccessPointPreference) preference, false);
+            showWifiDialog((LongPressAccessPointPreference) preference);
             return true;
-        } else{
+        } else if (preference == mAddNetworkPreference) {
+            showWifiDialog(null);
+            return true;
+        } else {
             return super.onPreferenceTreeClick(preference);
         }
     }
-
-    /**
-     * For search.
-     */
-    public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
-        new BaseSearchIndexProvider() {
-            @Override
-            public List<SearchIndexableResource> getXmlResourcesToIndex(Context context,
-                    boolean enabled) {
-                SearchIndexableResource sir = new SearchIndexableResource(context);
-                sir.xmlResId = R.xml.wifi_display_saved_access_points;
-                return Arrays.asList(sir);
-            }
-
-            @Override
-            public List<SearchIndexableRaw> getRawDataToIndex(Context context, boolean enabled) {
-                final List<SearchIndexableRaw> result = new ArrayList<SearchIndexableRaw>();
-                final Resources res = context.getResources();
-                final String title = res.getString(R.string.wifi_saved_access_points_titlebar);
-
-                // Add fragment title
-                SearchIndexableRaw data = new SearchIndexableRaw(context);
-                data.title = title;
-                data.screenTitle = title;
-                data.enabled = enabled;
-                result.add(data);
-
-                // Add available Wi-Fi access points
-                final List<AccessPoint> accessPoints = WifiSavedConfigUtils.getAllConfigs(
-                        context, context.getSystemService(WifiManager.class));
-
-                final int accessPointsSize = accessPoints.size();
-                for (int i = 0; i < accessPointsSize; ++i){
-                    data = new SearchIndexableRaw(context);
-                    data.title = accessPoints.get(i).getSsidStr();
-                    data.screenTitle = title;
-                    data.enabled = enabled;
-                    result.add(data);
-                }
-
-                return result;
-            }
-        };
 }

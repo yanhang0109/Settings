@@ -16,15 +16,13 @@
 
 package com.android.settings.nfc;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
-import android.nfc.NfcAdapter;
 import android.os.Bundle;
-import android.support.v7.preference.PreferenceManager;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.PreferenceManager;
+import androidx.preference.PreferenceScreen;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -33,14 +31,11 @@ import android.view.ViewGroup;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
+import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.search.Indexable;
 import com.android.settings.search.SearchIndexableRaw;
-import com.android.settings.SettingsPreferenceFragment;
-import com.android.settings.dashboard.SummaryLoader;
-import com.android.settings.nfc.PaymentBackend.PaymentAppInfo;
 
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -57,14 +52,18 @@ public class PaymentSettings extends SettingsPreferenceFragment implements Index
     }
 
     @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.nfc_payment_settings;
+    }
+
+    @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
 
         mPaymentBackend = new PaymentBackend(getActivity());
         setHasOptionsMenu(true);
 
-        PreferenceManager manager = getPreferenceManager();
-        PreferenceScreen screen = manager.createPreferenceScreen(getActivity());
+        final PreferenceScreen screen = getPreferenceScreen();
 
         List<PaymentBackend.PaymentAppInfo> appInfos = mPaymentBackend.getPaymentAppInfos();
         if (appInfos != null && appInfos.size() > 0) {
@@ -76,7 +75,6 @@ public class PaymentSettings extends SettingsPreferenceFragment implements Index
                     mPaymentBackend);
             screen.addPreference(foreground);
         }
-        setPreferenceScreen(screen);
     }
 
     @Override
@@ -110,39 +108,6 @@ public class PaymentSettings extends SettingsPreferenceFragment implements Index
         menuItem.setShowAsActionFlags(MenuItem.SHOW_AS_ACTION_NEVER);
     }
 
-    private static class SummaryProvider implements SummaryLoader.SummaryProvider {
-
-        private final Context mContext;
-        private final SummaryLoader mSummaryLoader;
-
-        public SummaryProvider(Context context, SummaryLoader summaryLoader) {
-            mContext = context;
-            mSummaryLoader = summaryLoader;
-        }
-
-        @Override
-        public void setListening(boolean listening) {
-            if (listening && NfcAdapter.getDefaultAdapter(mContext) != null) {
-                PaymentBackend paymentBackend = new PaymentBackend(mContext);
-                paymentBackend.refresh();
-                PaymentAppInfo app = paymentBackend.getDefaultApp();
-                if (app != null) {
-                    mSummaryLoader.setSummary(this, mContext.getString(R.string.payment_summary,
-                            app.label));
-                }
-            }
-        }
-    }
-
-    public static final SummaryLoader.SummaryProviderFactory SUMMARY_PROVIDER_FACTORY
-            = new SummaryLoader.SummaryProviderFactory() {
-        @Override
-        public SummaryLoader.SummaryProvider createSummaryProvider(Activity activity,
-                                                                   SummaryLoader summaryLoader) {
-            return new SummaryProvider(activity, summaryLoader);
-        }
-    };
-
     public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
         new BaseSearchIndexProvider() {
             @Override
@@ -162,11 +127,13 @@ public class PaymentSettings extends SettingsPreferenceFragment implements Index
 
             @Override
             public List<String> getNonIndexableKeys(Context context) {
+                final List<String> nonVisibleKeys = super.getNonIndexableKeys(context);
                 final PackageManager pm = context.getPackageManager();
-                if (pm.hasSystemFeature(PackageManager.FEATURE_NFC)) return null;
-                final List<String> nonVisibleKeys = new ArrayList<String>();
+                if (pm.hasSystemFeature(PackageManager.FEATURE_NFC)) {
+                    return nonVisibleKeys;
+                }
                 nonVisibleKeys.add(PAYMENT_KEY);
                 return nonVisibleKeys;
             }
-    };
+        };
 }

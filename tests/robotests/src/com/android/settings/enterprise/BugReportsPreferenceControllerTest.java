@@ -16,26 +16,19 @@
 
 package com.android.settings.enterprise;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.testutils.FakeFeatureFactory;
-
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.robolectric.annotation.Config;
-
-import java.util.Date;
-
 import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link BugReportsPreferenceController}.
- */
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import java.util.Date;
+
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
-public final class BugReportsPreferenceControllerTest extends
-        AdminActionPreferenceControllerTestBase {
+public class BugReportsPreferenceControllerTest
+    extends AdminActionPreferenceControllerTestBase {
 
     @Override
     public void setUp() {
@@ -46,7 +39,7 @@ public final class BugReportsPreferenceControllerTest extends
     @Override
     public void setDate(Date date) {
         when(mFeatureFactory.enterprisePrivacyFeatureProvider.getLastBugReportRequestTime())
-                .thenReturn(date);
+            .thenReturn(date);
     }
 
     @Test

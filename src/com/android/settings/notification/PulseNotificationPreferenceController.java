@@ -22,20 +22,22 @@ import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Handler;
 import android.provider.Settings;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.TwoStatePreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.TwoStatePreference;
 import android.util.Log;
 
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
 import static android.provider.Settings.System.NOTIFICATION_LIGHT_PULSE;
 
-public class PulseNotificationPreferenceController extends PreferenceController implements
-        Preference.OnPreferenceChangeListener, LifecycleObserver, OnResume, OnPause {
+public class PulseNotificationPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, Preference.OnPreferenceChangeListener,
+        LifecycleObserver, OnResume, OnPause {
 
     private static final String TAG = "PulseNotifPrefContr";
     private static final String KEY_NOTIFICATION_PULSE = "notification_pulse";

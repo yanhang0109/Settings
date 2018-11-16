@@ -22,7 +22,7 @@ import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
-import android.support.annotation.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
 import android.util.AttributeSet;
 import android.widget.ImageView;
 
@@ -78,6 +78,11 @@ public class BatteryMeterView extends ImageView {
 
     public void setCharging(boolean charging) {
         mDrawable.setCharging(charging);
+        postInvalidate();
+    }
+
+    public boolean getCharging() {
+        return mDrawable.getCharging();
     }
 
     public static class BatteryMeterDrawable extends BatteryMeterDrawableBase {

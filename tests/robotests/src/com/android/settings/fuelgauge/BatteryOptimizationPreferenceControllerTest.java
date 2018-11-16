@@ -17,25 +17,21 @@
 package com.android.settings.fuelgauge;
 
 import static com.google.common.truth.Truth.assertThat;
-
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
-import android.app.Fragment;
 import android.content.Context;
-import android.os.Bundle;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import android.content.Intent;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
-import com.android.settings.TestConfig;
+import com.android.settings.dashboard.DashboardFragment;
+import com.android.settingslib.fuelgauge.PowerWhitelistBackend;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -44,11 +40,10 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.annotation.Config;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class BatteryOptimizationPreferenceControllerTest {
+
     private static final String PKG_IN_WHITELIST = "com.pkg.in.whitelist";
     private static final String PKG_NOT_IN_WHITELIST = "com.pkg.not.in.whitelist";
     private static final String KEY_OPTIMIZATION = "battery_optimization";
@@ -56,7 +51,7 @@ public class BatteryOptimizationPreferenceControllerTest {
     @Mock
     private SettingsActivity mSettingsActivity;
     @Mock
-    private Fragment mFragment;
+    private DashboardFragment mFragment;
     @Mock
     private TestPowerWhitelistBackend mBackend;
 
@@ -84,9 +79,7 @@ public class BatteryOptimizationPreferenceControllerTest {
         final boolean handled = mController.handlePreferenceTreeClick(mPreference);
 
         assertThat(handled).isTrue();
-        verify(mSettingsActivity).startPreferencePanel(any(Fragment.class),
-                anyString(), any(Bundle.class), anyInt(), any(CharSequence.class),
-                any(Fragment.class), anyInt());
+        verify(mSettingsActivity).startActivity(any(Intent.class));
     }
 
     @Test
@@ -96,9 +89,7 @@ public class BatteryOptimizationPreferenceControllerTest {
         final boolean handled = mController.handlePreferenceTreeClick(mPreference);
 
         assertThat(handled).isFalse();
-        verify(mSettingsActivity, never()).startPreferencePanel(any(Fragment.class),
-                anyString(), any(Bundle.class), anyInt(), any(CharSequence.class),
-                any(Fragment.class), anyInt());
+        verify(mSettingsActivity, never()).startActivity(any(Intent.class));
     }
 
     @Test
@@ -124,8 +115,12 @@ public class BatteryOptimizationPreferenceControllerTest {
      */
     public static class TestPowerWhitelistBackend extends PowerWhitelistBackend {
 
+        public TestPowerWhitelistBackend(Context context) {
+            super(context);
+        }
+
         @Override
-        void refreshList() {
+        public void refreshList() {
             // Do nothing so we could mock it without error
         }
     }

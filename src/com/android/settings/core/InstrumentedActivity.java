@@ -16,18 +16,23 @@
 
 package com.android.settings.core;
 
-import com.android.settings.core.instrumentation.Instrumentable;
-import com.android.settings.core.instrumentation.VisibilityLoggerMixin;
-import com.android.settings.core.lifecycle.ObservableActivity;
+import android.os.Bundle;
+
+import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.core.instrumentation.Instrumentable;
+import com.android.settingslib.core.instrumentation.VisibilityLoggerMixin;
+import com.android.settingslib.core.lifecycle.ObservableActivity;
 
 /**
  * Instrumented activity that logs visibility state.
  */
 public abstract class InstrumentedActivity extends ObservableActivity implements Instrumentable {
 
-    public InstrumentedActivity() {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
         // Mixin that logs visibility change for activity.
-        getLifecycle().addObserver(new VisibilityLoggerMixin(getMetricsCategory()));
+        getLifecycle().addObserver(new VisibilityLoggerMixin(getMetricsCategory(),
+                FeatureFactory.getFactory(this).getMetricsFeatureProvider()));
     }
-
 }

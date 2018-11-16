@@ -21,9 +21,10 @@ import android.os.PersistableBundle;
 import android.util.Log;
 import android.util.Xml;
 
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
+
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlSerializer;
@@ -96,8 +97,12 @@ public class ConditionManager implements LifecycleObserver, OnResume, OnPause {
                     Condition condition = createCondition(Class.forName(clz));
                     PersistableBundle bundle = PersistableBundle.restoreFromXml(parser);
                     if (DEBUG) Log.d(TAG, "Reading " + clz + " -- " + bundle);
-                    condition.restoreState(bundle);
-                    conditions.add(condition);
+                    if (condition != null) {
+                        condition.restoreState(bundle);
+                        conditions.add(condition);
+                    } else {
+                        Log.e(TAG, "failed to add condition: " + clz);
+                    }
                     while (parser.getDepth() > depth) {
                         parser.next();
                     }
@@ -149,13 +154,18 @@ public class ConditionManager implements LifecycleObserver, OnResume, OnPause {
         addIfMissing(BackgroundDataCondition.class, conditions);
         addIfMissing(WorkModeCondition.class, conditions);
         addIfMissing(NightDisplayCondition.class, conditions);
+        addIfMissing(RingerMutedCondition.class, conditions);
+        addIfMissing(RingerVibrateCondition.class, conditions);
         Collections.sort(conditions, CONDITION_COMPARATOR);
     }
 
     private void addIfMissing(Class<? extends Condition> clz, ArrayList<Condition> conditions) {
         if (getCondition(clz, conditions) == null) {
             if (DEBUG) Log.d(TAG, "Adding missing " + clz.getName());
-            conditions.add(createCondition(clz));
+            Condition condition = createCondition(clz);
+            if (condition != null) {
+                conditions.add(condition);
+            }
         }
     }
 
@@ -176,8 +186,13 @@ public class ConditionManager implements LifecycleObserver, OnResume, OnPause {
             return new WorkModeCondition(this);
         } else if (NightDisplayCondition.class == clz) {
             return new NightDisplayCondition(this);
+        } else if (RingerMutedCondition.class == clz) {
+            return new RingerMutedCondition(this);
+        } else if (RingerVibrateCondition.class == clz) {
+            return new RingerVibrateCondition(this);
         }
-        throw new RuntimeException("Unexpected Condition " + clz);
+        Log.e(TAG, "unknown condition class: " + clz.getSimpleName());
+        return null;
     }
 
     Context getContext() {

@@ -22,8 +22,8 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
@@ -43,7 +43,7 @@ public class WallpaperTypeSettings extends SettingsPreferenceFragment implements
     }
 
     @Override
-    protected int getHelpResource() {
+    public int getHelpResource() {
         return R.string.help_uri_wallpaper;
     }
 
@@ -67,7 +67,7 @@ public class WallpaperTypeSettings extends SettingsPreferenceFragment implements
         // Add Preference items for each of the matching activities
         for (ResolveInfo info : rList) {
             Preference pref = new Preference(getPrefContext());
-            Intent prefIntent = new Intent(intent);
+            Intent prefIntent = new Intent(intent).addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT);
             prefIntent.setComponent(new ComponentName(
                     info.activityInfo.packageName, info.activityInfo.name));
             pref.setIntent(prefIntent);
@@ -77,6 +77,16 @@ public class WallpaperTypeSettings extends SettingsPreferenceFragment implements
             pref.setIcon(info.loadIcon(pm));
             parent.addPreference(pref);
         }
+    }
+
+    @Override
+    public boolean onPreferenceTreeClick(Preference preference) {
+        if (preference.getIntent() == null) {
+            return super.onPreferenceTreeClick(preference);
+        }
+        startActivity(preference.getIntent());
+        finish();
+        return true;
     }
 
     public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
@@ -90,18 +100,25 @@ public class WallpaperTypeSettings extends SettingsPreferenceFragment implements
                 final List<ResolveInfo> rList = pm.queryIntentActivities(intent,
                         PackageManager.MATCH_DEFAULT_ONLY);
 
-                // Add indexable data for each of the matching activities
+                // Add indexable data for package that is in config_wallpaper_picker_package
+                final String wallpaperPickerPackage =
+                        context.getString(R.string.config_wallpaper_picker_package);
                 for (ResolveInfo info : rList) {
+                    if (!wallpaperPickerPackage.equals(info.activityInfo.packageName)) {
+                        continue;
+                    }
                     CharSequence label = info.loadLabel(pm);
                     if (label == null) label = info.activityInfo.packageName;
 
                     SearchIndexableRaw data = new SearchIndexableRaw(context);
                     data.title = label.toString();
+                    data.key = "wallpaper_type_settings";
                     data.screenTitle = context.getResources().getString(
                             R.string.wallpaper_settings_fragment_title);
                     data.intentAction = Intent.ACTION_SET_WALLPAPER;
                     data.intentTargetPackage = info.activityInfo.packageName;
                     data.intentTargetClass = info.activityInfo.name;
+                    data.keywords = context.getString(R.string.keywords_wallpaper);
                     result.add(data);
                 }
 

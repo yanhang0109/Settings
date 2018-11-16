@@ -16,31 +16,23 @@
 
 package com.android.settings.notification;
 
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.verify;
+
 import android.content.Context;
 
 import com.android.internal.logging.nano.MetricsProto;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
 import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Answers;
-import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.verify;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class NotificationAccessSettingsTest {
-
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
-    private Context mContext;
 
     private FakeFeatureFactory mFeatureFactory;
     private NotificationAccessSettings mFragment;
@@ -48,20 +40,19 @@ public class NotificationAccessSettingsTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        FakeFeatureFactory.setupForTest(mContext);
-        mFeatureFactory = (FakeFeatureFactory) FakeFeatureFactory.getFactory(mContext);
+        mFeatureFactory = FakeFeatureFactory.setupForTest();
         mFragment = new NotificationAccessSettings();
     }
 
     @Test
     public void logSpecialPermissionChange() {
         mFragment.logSpecialPermissionChange(true, "app");
-        verify(mFeatureFactory.metricsFeatureProvider).action(any(Context.class),
+        verify(mFeatureFactory.metricsFeatureProvider).action(nullable(Context.class),
                 eq(MetricsProto.MetricsEvent.APP_SPECIAL_PERMISSION_NOTIVIEW_ALLOW),
                 eq("app"));
 
         mFragment.logSpecialPermissionChange(false, "app");
-        verify(mFeatureFactory.metricsFeatureProvider).action(any(Context.class),
+        verify(mFeatureFactory.metricsFeatureProvider).action(nullable(Context.class),
                 eq(MetricsProto.MetricsEvent.APP_SPECIAL_PERMISSION_NOTIVIEW_DENY),
                 eq("app"));
     }

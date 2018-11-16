@@ -38,7 +38,7 @@ import android.os.Handler;
 import android.os.UserManager;
 import android.security.Credentials;
 import android.security.KeyStore;
-import android.support.annotation.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -55,12 +55,14 @@ import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.CompoundButton.OnCheckedChangeListener;
 import android.widget.EditText;
+import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 
 import com.android.settings.ProxySelector;
 import com.android.settings.R;
-import com.android.settings.Utils;
+import com.android.settingslib.Utils;
+import com.android.settingslib.utils.ThreadUtils;
 import com.android.settingslib.wifi.AccessPoint;
 
 import java.net.Inet4Address;
@@ -75,7 +77,7 @@ import java.util.Iterator;
  */
 public class WifiConfigController implements TextWatcher,
         AdapterView.OnItemSelectedListener, OnCheckedChangeListener,
-        TextView.OnEditorActionListener, View.OnKeyListener{
+        TextView.OnEditorActionListener, View.OnKeyListener {
     private static final String TAG = "WifiConfigController";
 
     private static final String SYSTEM_CA_STORE_PATH = "/system/etc/security/cacerts";
@@ -87,6 +89,10 @@ public class WifiConfigController implements TextWatcher,
     /* This value comes from "wifi_ip_settings" resource array */
     private static final int DHCP = 0;
     private static final int STATIC_IP = 1;
+
+    /* Constants used for referring to the hidden state of a network. */
+    public static final int HIDDEN_NETWORK = 1;
+    public static final int NOT_HIDDEN_NETWORK = 0;
 
     /* These values come from "wifi_proxy_settings" resource array */
     public static final int PROXY_NONE = 0;
@@ -110,12 +116,11 @@ public class WifiConfigController implements TextWatcher,
     public static final int WIFI_PEAP_PHASE2_AKA        = 4;
     public static final int WIFI_PEAP_PHASE2_AKA_PRIME  = 5;
 
+
     /* Phase2 methods supported by PEAP are limited */
     private final ArrayAdapter<String> mPhase2PeapAdapter;
     /* Full list of phase2 methods */
     private final ArrayAdapter<String> mPhase2FullAdapter;
-
-    private final Handler mTextViewChangedHandler;
 
     // e.g. AccessPoint.SECURITY_NONE
     private int mAccessPointSecurity;
@@ -127,6 +132,7 @@ public class WifiConfigController implements TextWatcher,
     private String mDoNotProvideEapUserCertString;
     private String mDoNotValidateEapServerString;
 
+    private ScrollView mDialogContainer;
     private Spinner mSecuritySpinner;
     private Spinner mEapMethodSpinner;
     private Spinner mEapCaCertSpinner;
@@ -146,11 +152,13 @@ public class WifiConfigController implements TextWatcher,
     private TextView mDns2View;
 
     private Spinner mProxySettingsSpinner;
+    private Spinner mMeteredSettingsSpinner;
+    private Spinner mHiddenSettingsSpinner;
+    private TextView mHiddenWarningView;
     private TextView mProxyHostView;
     private TextView mProxyPortView;
     private TextView mProxyExclusionListView;
     private TextView mProxyPacView;
-
     private CheckBox mSharedCheckBox;
 
     private IpAssignment mIpAssignment = IpAssignment.UNASSIGNED;
@@ -174,7 +182,6 @@ public class WifiConfigController implements TextWatcher,
                 accessPoint.getSecurity();
         mMode = mode;
 
-        mTextViewChangedHandler = new Handler();
         mContext = mConfigUi.getContext();
         final Resources res = mContext.getResources();
 
@@ -204,11 +211,20 @@ public class WifiConfigController implements TextWatcher,
         mDoNotValidateEapServerString =
             mContext.getString(R.string.wifi_do_not_validate_eap_server);
 
+        mDialogContainer = mView.findViewById(R.id.dialog_scrollview);
         mIpSettingsSpinner = (Spinner) mView.findViewById(R.id.ip_settings);
         mIpSettingsSpinner.setOnItemSelectedListener(this);
         mProxySettingsSpinner = (Spinner) mView.findViewById(R.id.proxy_settings);
         mProxySettingsSpinner.setOnItemSelectedListener(this);
         mSharedCheckBox = (CheckBox) mView.findViewById(R.id.shared);
+        mMeteredSettingsSpinner = mView.findViewById(R.id.metered_settings);
+        mHiddenSettingsSpinner = mView.findViewById(R.id.hidden_settings);
+        mHiddenSettingsSpinner.setOnItemSelectedListener(this);
+        mHiddenWarningView = mView.findViewById(R.id.hidden_settings_warning);
+        mHiddenWarningView.setVisibility(
+                mHiddenSettingsSpinner.getSelectedItemPosition() == NOT_HIDDEN_NETWORK
+                        ? View.GONE
+                        : View.VISIBLE);
 
         if (mAccessPoint == null) { // new network
             mConfigUi.setTitle(R.string.wifi_add_network);
@@ -222,6 +238,8 @@ public class WifiConfigController implements TextWatcher,
             showIpConfigFields();
             showProxyFields();
             mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.VISIBLE);
+            // Hidden option can be changed only when the user adds a network manually.
+            mView.findViewById(R.id.hidden_settings_field).setVisibility(View.VISIBLE);
             ((CheckBox) mView.findViewById(R.id.wifi_advanced_togglebox))
                     .setOnCheckedChangeListener(this);
 
@@ -238,6 +256,10 @@ public class WifiConfigController implements TextWatcher,
             boolean showAdvancedFields = false;
             if (mAccessPoint.isSaved()) {
                 WifiConfiguration config = mAccessPoint.getConfig();
+                mMeteredSettingsSpinner.setSelection(config.meteredOverride);
+                mHiddenSettingsSpinner.setSelection(config.hiddenSSID
+                        ? HIDDEN_NETWORK
+                        : NOT_HIDDEN_NETWORK);
                 if (config.getIpAssignment() == IpAssignment.STATIC) {
                     mIpSettingsSpinner.setSelection(STATIC_IP);
                     showAdvancedFields = true;
@@ -280,11 +302,17 @@ public class WifiConfigController implements TextWatcher,
                 showProxyFields();
                 final CheckBox advancedTogglebox =
                         (CheckBox) mView.findViewById(R.id.wifi_advanced_togglebox);
-                mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(View.VISIBLE);
+                mView.findViewById(R.id.wifi_advanced_toggle).setVisibility(
+                        mAccessPoint.isCarrierAp() ? View.GONE : View.VISIBLE);
                 advancedTogglebox.setOnCheckedChangeListener(this);
                 advancedTogglebox.setChecked(showAdvancedFields);
                 mView.findViewById(R.id.wifi_advanced_fields)
                         .setVisibility(showAdvancedFields ? View.VISIBLE : View.GONE);
+                if (mAccessPoint.isCarrierAp()) {
+                    addRow(group, R.string.wifi_carrier_connect,
+                            String.format(mContext.getString(R.string.wifi_carrier_content),
+                            mAccessPoint.getCarrierName()));
+                }
             }
 
             if (mMode == WifiConfigUiBase.MODE_MODIFY) {
@@ -356,6 +384,9 @@ public class WifiConfigController implements TextWatcher,
         if (mConfigUi.getSubmitButton() != null) {
             enableSubmitIfAppropriate();
         }
+
+        // After done view show and hide, request focus from parent view
+        mView.findViewById(R.id.l_wifidialog).requestFocus();
     }
 
     @VisibleForTesting
@@ -404,15 +435,23 @@ public class WifiConfigController implements TextWatcher,
         submit.setEnabled(isSubmittable());
     }
 
+    boolean isValidPsk(String password) {
+        if (password.length() == 64 && password.matches("[0-9A-Fa-f]{64}")) {
+            return true;
+        } else if (password.length() >= 8 && password.length() <= 63) {
+            return true;
+        }
+        return false;
+    }
+
     boolean isSubmittable() {
         boolean enabled = false;
         boolean passwordInvalid = false;
-
         if (mPasswordView != null
                 && ((mAccessPointSecurity == AccessPoint.SECURITY_WEP
                         && mPasswordView.length() == 0)
                     || (mAccessPointSecurity == AccessPoint.SECURITY_PSK
-                           && (mPasswordView.length() < 8 || mPasswordView.length() > 63)))) {
+                           && !isValidPsk(mPasswordView.getText().toString())))) {
             passwordInvalid = true;
         }
         if ((mSsidView != null && mSsidView.length() == 0)
@@ -457,7 +496,14 @@ public class WifiConfigController implements TextWatcher,
     void showWarningMessagesIfAppropriate() {
         mView.findViewById(R.id.no_ca_cert_warning).setVisibility(View.GONE);
         mView.findViewById(R.id.no_domain_warning).setVisibility(View.GONE);
+        mView.findViewById(R.id.ssid_too_long_warning).setVisibility(View.GONE);
 
+        if (mSsidView != null) {
+            final String ssid = mSsidView.getText().toString();
+            if (WifiUtils.isSSIDTooLong(ssid)) {
+                mView.findViewById(R.id.ssid_too_long_warning).setVisibility(View.VISIBLE);
+            }
+        }
         if (mEapCaCertSpinner != null
                 && mView.findViewById(R.id.l_ca_cert).getVisibility() != View.GONE) {
             String caCertSelection = (String) mEapCaCertSpinner.getSelectedItem();
@@ -478,7 +524,7 @@ public class WifiConfigController implements TextWatcher,
         }
     }
 
-    /* package */ WifiConfiguration getConfig() {
+    public WifiConfiguration getConfig() {
         if (mMode == WifiConfigUiBase.MODE_VIEW) {
             return null;
         }
@@ -489,12 +535,13 @@ public class WifiConfigController implements TextWatcher,
             config.SSID = AccessPoint.convertToQuotedString(
                     mSsidView.getText().toString());
             // If the user adds a network manually, assume that it is hidden.
-            config.hiddenSSID = true;
+            config.hiddenSSID = mHiddenSettingsSpinner.getSelectedItemPosition() == HIDDEN_NETWORK;
         } else if (!mAccessPoint.isSaved()) {
             config.SSID = AccessPoint.convertToQuotedString(
                     mAccessPoint.getSsidStr());
         } else {
             config.networkId = mAccessPoint.getConfig().networkId;
+            config.hiddenSSID = mAccessPoint.getConfig().hiddenSSID;
         }
 
         config.shared = mSharedCheckBox.isChecked();
@@ -651,6 +698,9 @@ public class WifiConfigController implements TextWatcher,
         config.setIpConfiguration(
                 new IpConfiguration(mIpAssignment, mProxySettings,
                                     mStaticIpConfiguration, mHttpProxy));
+        if (mMeteredSettingsSpinner != null) {
+            config.meteredOverride = mMeteredSettingsSpinner.getSelectedItemPosition();
+        }
 
         return config;
     }
@@ -837,6 +887,10 @@ public class WifiConfigController implements TextWatcher,
             mEapIdentityView = (TextView) mView.findViewById(R.id.identity);
             mEapAnonymousView = (TextView) mView.findViewById(R.id.anonymous);
 
+            if (mAccessPoint != null && mAccessPoint.isCarrierAp()) {
+                mEapMethodSpinner.setSelection(mAccessPoint.getCarrierApEapType());
+            }
+
             loadCertificates(
                     mEapCaCertSpinner,
                     Credentials.CA_CERTIFICATE,
@@ -1004,6 +1058,9 @@ public class WifiConfigController implements TextWatcher,
                 setUserCertInvisible();
                 setPasswordInvisible();
                 setIdentityInvisible();
+                if (mAccessPoint != null && mAccessPoint.isCarrierAp()) {
+                    setEapMethodInvisible();
+                }
                 break;
         }
 
@@ -1067,6 +1124,10 @@ public class WifiConfigController implements TextWatcher,
         mPasswordView.setText("");
         mView.findViewById(R.id.password_layout).setVisibility(View.GONE);
         mView.findViewById(R.id.show_password_layout).setVisibility(View.GONE);
+    }
+
+    private void setEapMethodInvisible() {
+        mView.findViewById(R.id.eap).setVisibility(View.GONE);
     }
 
     private void showIpConfigFields() {
@@ -1179,6 +1240,11 @@ public class WifiConfigController implements TextWatcher,
         }
     }
 
+    @VisibleForTesting
+    KeyStore getKeyStore() {
+        return KeyStore.getInstance();
+    }
+
     private void loadCertificates(
             Spinner spinner,
             String prefix,
@@ -1195,8 +1261,12 @@ public class WifiConfigController implements TextWatcher,
         if (showUsePreinstalledCertOption) {
             certs.add(mUseSystemCertsString);
         }
-        certs.addAll(
-                Arrays.asList(KeyStore.getInstance().list(prefix, android.os.Process.WIFI_UID)));
+        try {
+            certs.addAll(
+                Arrays.asList(getKeyStore().list(prefix, android.os.Process.WIFI_UID)));
+        } catch (Exception e) {
+            Log.e(TAG, "can't get the certificate list from KeyStore");
+        }
         certs.add(noCertificateString);
 
         final ArrayAdapter<String> adapter = new ArrayAdapter<String>(
@@ -1225,12 +1295,10 @@ public class WifiConfigController implements TextWatcher,
 
     @Override
     public void afterTextChanged(Editable s) {
-        mTextViewChangedHandler.post(new Runnable() {
-                public void run() {
-                    showWarningMessagesIfAppropriate();
-                    enableSubmitIfAppropriate();
-                }
-            });
+        ThreadUtils.postOnMainThread(() -> {
+            showWarningMessagesIfAppropriate();
+            enableSubmitIfAppropriate();
+        });
     }
 
     @Override
@@ -1303,6 +1371,16 @@ public class WifiConfigController implements TextWatcher,
             showPeapFields();
         } else if (parent == mProxySettingsSpinner) {
             showProxyFields();
+        } else if (parent == mHiddenSettingsSpinner) {
+            mHiddenWarningView.setVisibility(
+                    position == NOT_HIDDEN_NETWORK
+                            ? View.GONE
+                            : View.VISIBLE);
+            if (position == HIDDEN_NETWORK) {
+                mDialogContainer.post(() -> {
+                  mDialogContainer.fullScroll(View.FOCUS_DOWN);
+                });
+            }
         } else {
             showIpConfigFields();
         }

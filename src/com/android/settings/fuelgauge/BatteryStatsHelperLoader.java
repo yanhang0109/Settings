@@ -20,10 +20,10 @@ import android.content.Context;
 import android.os.BatteryStats;
 import android.os.Bundle;
 import android.os.UserManager;
-import android.support.annotation.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
 
 import com.android.internal.os.BatteryStatsHelper;
-import com.android.settings.utils.AsyncLoader;
+import com.android.settingslib.utils.AsyncLoader;
 
 /**
  * Loader to get new {@link BatteryStatsHelper} in the background
@@ -31,19 +31,22 @@ import com.android.settings.utils.AsyncLoader;
 public class BatteryStatsHelperLoader extends AsyncLoader<BatteryStatsHelper> {
     @VisibleForTesting
     UserManager mUserManager;
-    private Bundle mBundle;
+    @VisibleForTesting
+    BatteryUtils mBatteryUtils;
 
-    public BatteryStatsHelperLoader(Context context, Bundle bundle) {
+    public BatteryStatsHelperLoader(Context context) {
         super(context);
-        mBundle = bundle;
         mUserManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+        mBatteryUtils = BatteryUtils.getInstance(context);
     }
 
     @Override
     public BatteryStatsHelper loadInBackground() {
-        final BatteryStatsHelper statsHelper = new BatteryStatsHelper(getContext(), true);
+        Context context = getContext();
+        final BatteryStatsHelper statsHelper = new BatteryStatsHelper(context,
+                true /* collectBatteryBroadcast */);
+        mBatteryUtils.initBatteryStatsHelper(statsHelper, null /* bundle */, mUserManager);
 
-        initBatteryStatsHelper(statsHelper);
         return statsHelper;
     }
 
@@ -52,9 +55,4 @@ public class BatteryStatsHelperLoader extends AsyncLoader<BatteryStatsHelper> {
 
     }
 
-    @VisibleForTesting
-    void initBatteryStatsHelper(BatteryStatsHelper statsHelper) {
-        statsHelper.create(mBundle);
-        statsHelper.refreshStats(BatteryStats.STATS_SINCE_CHARGED, mUserManager.getUserProfiles());
-    }
 }

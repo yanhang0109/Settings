@@ -16,15 +16,15 @@
 
 package com.android.settings.password;
 
+import static com.google.common.truth.Truth.assertThat;
+import static org.robolectric.Shadows.shadowOf;
+
 import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
 
-import com.android.settings.ChooseLockGeneric;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.SetupChooseLockGeneric;
-import com.android.settings.TestConfig;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.After;
 import org.junit.Before;
@@ -32,14 +32,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowActivity;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.robolectric.Shadows.shadowOf;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class SetNewPasswordActivityTest {
 
     private int mProvisioned;
@@ -82,6 +77,5 @@ public class SetNewPasswordActivityTest {
 
         assertThat(intent.getComponent())
                 .isEqualTo(new ComponentName(activity, SetupChooseLockGeneric.class));
-
     }
 }

@@ -16,6 +16,12 @@
 
 package com.android.settings.accounts;
 
+import static android.content.Intent.EXTRA_USER;
+import static android.os.UserManager.DISALLOW_MODIFY_ACCOUNTS;
+import static android.os.UserManager.DISALLOW_REMOVE_MANAGED_PROFILE;
+import static android.provider.Settings.ACTION_ADD_ACCOUNT;
+import static android.provider.Settings.EXTRA_AUTHORITIES;
+
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.content.BroadcastReceiver;
@@ -30,48 +36,42 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceClickListener;
-import android.support.v7.preference.PreferenceGroup;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceClickListener;
+import androidx.preference.PreferenceGroup;
+import androidx.preference.PreferenceScreen;
+import android.text.BidiFormatter;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.util.SparseArray;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.settings.AccessiblePreferenceCategory;
-import com.android.settings.DimmableIconPreference;
 import com.android.settings.R;
-import com.android.settings.SettingsActivity;
 import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.Utils;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.search.SearchIndexableRaw;
-import com.android.settings.search2.SearchFeatureProviderImpl;
 import com.android.settingslib.RestrictedPreference;
 import com.android.settingslib.accounts.AuthenticatorHelper;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-import static android.content.Intent.EXTRA_USER;
-import static android.os.UserManager.DISALLOW_MODIFY_ACCOUNTS;
-import static android.os.UserManager.DISALLOW_REMOVE_MANAGED_PROFILE;
-import static android.provider.Settings.EXTRA_AUTHORITIES;
-
-public class AccountPreferenceController extends PreferenceController
-        implements AuthenticatorHelper.OnAccountsUpdateListener,
+public class AccountPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, AuthenticatorHelper.OnAccountsUpdateListener,
         OnPreferenceClickListener, LifecycleObserver, OnPause, OnResume {
 
     private static final String TAG = "AccountPrefController";
-    private static final String ADD_ACCOUNT_ACTION = "android.settings.ADD_ACCOUNT_SETTINGS";
 
     private static final int ORDER_ACCOUNT_PROFILES = 1;
     private static final int ORDER_LAST = 1002;
@@ -101,7 +101,7 @@ public class AccountPreferenceController extends PreferenceController
         /**
          * The preference that displays the add account button.
          */
-        public DimmableIconPreference addAccountPreference;
+        public RestrictedPreference addAccountPreference;
         /**
          * The preference that displays the button to remove the managed profile
          */
@@ -232,7 +232,7 @@ public class AccountPreferenceController extends PreferenceController
         for (int i = 0; i < count; i++) {
             ProfileData profileData = mProfiles.valueAt(i);
             if (preference == profileData.addAccountPreference) {
-                Intent intent = new Intent(ADD_ACCOUNT_ACTION);
+                Intent intent = new Intent(ACTION_ADD_ACCOUNT);
                 intent.putExtra(EXTRA_USER, profileData.userInfo.getUserHandle());
                 intent.putExtra(EXTRA_AUTHORITIES, mAuthorities);
                 mContext.startActivity(intent);
@@ -247,17 +247,17 @@ public class AccountPreferenceController extends PreferenceController
             if (preference == profileData.managedProfilePreference) {
                 Bundle arguments = new Bundle();
                 arguments.putParcelable(Intent.EXTRA_USER, profileData.userInfo.getUserHandle());
-                ((SettingsActivity) mParent.getActivity()).startPreferencePanel(mParent,
-                        ManagedProfileSettings.class.getName(), arguments,
-                        R.string.managed_profile_settings_title, null, null, 0);
+                new SubSettingLauncher(mContext)
+                        .setSourceMetricsCategory(mParent.getMetricsCategory())
+                        .setDestination(ManagedProfileSettings.class.getName())
+                        .setTitle(R.string.managed_profile_settings_title)
+                        .setArguments(arguments)
+                        .launch();
+
                 return true;
             }
         }
         return false;
-    }
-
-    SparseArray<ProfileData> getProfileData() {
-        return mProfiles;
     }
 
     private void updateUi() {
@@ -270,7 +270,7 @@ public class AccountPreferenceController extends PreferenceController
         for (int i = 0, size = mProfiles.size(); i < size; i++) {
             mProfiles.valueAt(i).pendingRemoval = true;
         }
-        if (mUm.isLinkedUser()) {
+        if (mUm.isRestrictedProfile()) {
             // Restricted user or similar
             UserInfo userInfo = mUm.getUserInfo(UserHandle.myUserId());
             updateProfileUi(userInfo);
@@ -314,7 +314,7 @@ public class AccountPreferenceController extends PreferenceController
         preferenceGroup.setOrder(mAccountProfileOrder++);
         if (isSingleProfile()) {
             preferenceGroup.setTitle(context.getString(R.string.account_for_section_header,
-                userInfo.name));
+                    BidiFormatter.getInstance().unicodeWrap(userInfo.name)));
             preferenceGroup.setContentDescription(
                 mContext.getString(R.string.account_settings));
         } else if (userInfo.isManagedProfile()) {
@@ -323,7 +323,7 @@ public class AccountPreferenceController extends PreferenceController
             preferenceGroup.setSummary(workGroupSummary);
             preferenceGroup.setContentDescription(
                 mContext.getString(R.string.accessibility_category_work, workGroupSummary));
-            profileData.removeWorkProfilePreference = newRemoveWorkProfilePreference(context);
+            profileData.removeWorkProfilePreference = newRemoveWorkProfilePreference();
             mHelper.enforceRestrictionOnPreference(profileData.removeWorkProfilePreference,
                 DISALLOW_REMOVE_MANAGED_PROFILE, UserHandle.myUserId());
             profileData.managedProfilePreference = newManagedProfileSettings();
@@ -340,18 +340,16 @@ public class AccountPreferenceController extends PreferenceController
         if (userInfo.isEnabled()) {
             profileData.authenticatorHelper = new AuthenticatorHelper(context,
                     userInfo.getUserHandle(), this);
-            profileData.addAccountPreference = newAddAccountPreference(context);
+            profileData.addAccountPreference = newAddAccountPreference();
             mHelper.enforceRestrictionOnPreference(profileData.addAccountPreference,
                 DISALLOW_MODIFY_ACCOUNTS, userInfo.id);
         }
         mProfiles.put(userInfo.id, profileData);
-        new SearchFeatureProviderImpl().getIndexingManager(mContext).updateFromClassNameResource(
-                UserAndAccountDashboardFragment.class.getName(), true /* includeInSearchResults */);
     }
 
-    private DimmableIconPreference newAddAccountPreference(Context context) {
-        DimmableIconPreference preference =
-            new DimmableIconPreference(mParent.getPreferenceManager().getContext());
+    private RestrictedPreference newAddAccountPreference() {
+        RestrictedPreference preference =
+            new RestrictedPreference(mParent.getPreferenceManager().getContext());
         preference.setTitle(R.string.add_account_label);
         preference.setIcon(R.drawable.ic_menu_add);
         preference.setOnPreferenceClickListener(this);
@@ -359,11 +357,11 @@ public class AccountPreferenceController extends PreferenceController
         return preference;
     }
 
-    private RestrictedPreference newRemoveWorkProfilePreference(Context context) {
+    private RestrictedPreference newRemoveWorkProfilePreference() {
         RestrictedPreference preference = new RestrictedPreference(
             mParent.getPreferenceManager().getContext());
         preference.setTitle(R.string.remove_managed_profile_label);
-        preference.setIcon(R.drawable.ic_menu_delete);
+        preference.setIcon(R.drawable.ic_delete);
         preference.setOnPreferenceClickListener(this);
         preference.setOrder(ORDER_LAST);
         return preference;
@@ -373,7 +371,7 @@ public class AccountPreferenceController extends PreferenceController
     private Preference newManagedProfileSettings() {
         Preference preference = new Preference(mParent.getPreferenceManager().getContext());
         preference.setTitle(R.string.managed_profile_settings_title);
-        preference.setIcon(R.drawable.ic_settings);
+        preference.setIcon(R.drawable.ic_settings_24dp);
         preference.setOnPreferenceClickListener(this);
         preference.setOrder(ORDER_NEXT_TO_LAST);
         return preference;

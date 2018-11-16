@@ -19,9 +19,12 @@ package com.android.settings.language;
 import android.content.Context;
 import android.speech.tts.TtsEngines;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settings.R;
+import com.android.settingslib.core.AbstractPreferenceController;
 
-public class TtsPreferenceController extends PreferenceController {
+public class TtsPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     private static final String KEY_VOICE_CATEGORY = "voice_category";
     private static final String KEY_TTS_SETTINGS = "tts_settings_summary";
@@ -35,7 +38,8 @@ public class TtsPreferenceController extends PreferenceController {
 
     @Override
     public boolean isAvailable() {
-        return !mTtsEngines.getEngines().isEmpty();
+        return !mTtsEngines.getEngines().isEmpty() &&
+                mContext.getResources().getBoolean(R.bool.config_show_tts_settings_summary);
     }
 
     @Override

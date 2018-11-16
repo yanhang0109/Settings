@@ -15,7 +15,7 @@
 package com.android.settings.datausage;
 
 import android.content.Context;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.util.AttributeSet;
 import com.android.settings.R;
 
@@ -37,7 +37,7 @@ public class DataSaverPreference extends Preference implements DataSaverBackend.
     @Override
     public void onDetached() {
         super.onDetached();
-        mDataSaverBackend.addListener(this);
+        mDataSaverBackend.remListener(this);
     }
 
     @Override

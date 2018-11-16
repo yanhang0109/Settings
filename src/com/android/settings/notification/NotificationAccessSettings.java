@@ -22,43 +22,35 @@ import android.app.Fragment;
 import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.service.notification.NotificationListenerService;
-import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.internal.logging.MetricsLogger;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.utils.ManagedServiceSettings;
 
+/**
+ * Settings screen for managing notification listener permissions
+ */
 public class NotificationAccessSettings extends ManagedServiceSettings {
     private static final String TAG = NotificationAccessSettings.class.getSimpleName();
-    private static final Config CONFIG = getNotificationListenerConfig();
+    private static final Config CONFIG =  new Config.Builder()
+            .setTag(TAG)
+            .setSetting(Settings.Secure.ENABLED_NOTIFICATION_LISTENERS)
+            .setIntentAction(NotificationListenerService.SERVICE_INTERFACE)
+            .setPermission(android.Manifest.permission.BIND_NOTIFICATION_LISTENER_SERVICE)
+            .setNoun("notification listener")
+            .setWarningDialogTitle(R.string.notification_listener_security_warning_title)
+            .setWarningDialogSummary(R.string.notification_listener_security_warning_summary)
+            .setEmptyText(R.string.no_notification_listeners)
+            .build();
 
-
-    @Override
-    public void onCreate(Bundle icicle) {
-        super.onCreate(icicle);
-    }
-
-    private static Config getNotificationListenerConfig() {
-        final Config c = new Config();
-        c.tag = TAG;
-        c.setting = Settings.Secure.ENABLED_NOTIFICATION_LISTENERS;
-        c.intentAction = NotificationListenerService.SERVICE_INTERFACE;
-        c.permission = android.Manifest.permission.BIND_NOTIFICATION_LISTENER_SERVICE;
-        c.noun = "notification listener";
-        c.warningDialogTitle = R.string.notification_listener_security_warning_title;
-        c.warningDialogSummary = R.string.notification_listener_security_warning_summary;
-        c.emptyText = R.string.no_notification_listeners;
-        return c;
-    }
+    private NotificationManager mNm;
 
     @Override
     public int getMetricsCategory() {
@@ -66,14 +58,21 @@ public class NotificationAccessSettings extends ManagedServiceSettings {
     }
 
     @Override
+    public void onAttach(Context context) {
+        super.onAttach(context);
+        mNm = context.getSystemService(NotificationManager.class);
+    }
+
+    @Override
     protected Config getConfig() {
         return CONFIG;
     }
 
+    @Override
     protected boolean setEnabled(ComponentName service, String title, boolean enable) {
         logSpecialPermissionChange(enable, service.getPackageName());
         if (!enable) {
-            if (!mServiceListing.isEnabled(service)) {
+            if (!isServiceEnabled(service)) {
                 return true; // already disabled
             }
             // show a friendly dialog
@@ -82,8 +81,30 @@ public class NotificationAccessSettings extends ManagedServiceSettings {
                     .show(getFragmentManager(), "friendlydialog");
             return false;
         } else {
-            return super.setEnabled(service, title, enable);
+            if (isServiceEnabled(service)) {
+                return true; // already enabled
+            }
+            // show a scary dialog
+            new ScaryWarningDialogFragment()
+                    .setServiceInfo(service, title, this)
+                    .show(getFragmentManager(), "dialog");
+            return false;
         }
+    }
+
+    @Override
+    protected boolean isServiceEnabled(ComponentName cn) {
+        return mNm.isNotificationListenerAccessGranted(cn);
+    }
+
+    @Override
+    protected void enable(ComponentName service) {
+        mNm.setNotificationListenerAccessGranted(service, true);
+    }
+
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.notification_access_settings;
     }
 
     @VisibleForTesting
@@ -94,18 +115,12 @@ public class NotificationAccessSettings extends ManagedServiceSettings {
                 logCategory, packageName);
     }
 
-    private static void disable(final Context context, final NotificationAccessSettings parent,
-            final ComponentName cn) {
-        parent.mServiceListing.setEnabled(cn, false);
-        AsyncTask.execute(new Runnable() {
-            @Override
-            public void run() {
-                final NotificationManager mgr = context.getSystemService(NotificationManager.class);
-
-                if (!mgr.isNotificationPolicyAccessGrantedForPackage(
-                        cn.getPackageName())) {
-                    mgr.removeAutomaticZenRules(cn.getPackageName());
-                }
+    private static void disable(final NotificationAccessSettings parent, final ComponentName cn) {
+        parent.mNm.setNotificationListenerAccessGranted(cn, false);
+        AsyncTask.execute(() -> {
+            if (!parent.mNm.isNotificationPolicyAccessGrantedForPackage(
+                    cn.getPackageName())) {
+                parent.mNm.removeAutomaticZenRules(cn.getPackageName());
             }
         });
     }
@@ -143,16 +158,10 @@ public class NotificationAccessSettings extends ManagedServiceSettings {
                     .setMessage(summary)
                     .setCancelable(true)
                     .setPositiveButton(R.string.notification_listener_disable_warning_confirm,
-                            new DialogInterface.OnClickListener() {
-                                public void onClick(DialogInterface dialog, int id) {
-                                    disable(getContext(), parent, cn);
-                                }
-                            })
+                            (dialog, id) -> disable(parent, cn))
                     .setNegativeButton(R.string.notification_listener_disable_warning_cancel,
-                            new DialogInterface.OnClickListener() {
-                                public void onClick(DialogInterface dialog, int id) {
-                                    // pass
-                                }
+                            (dialog, id) -> {
+                                // pass
                             })
                     .create();
         }

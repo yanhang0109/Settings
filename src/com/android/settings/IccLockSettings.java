@@ -20,28 +20,36 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.graphics.PixelFormat;
 import android.os.AsyncResult;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.text.TextUtils;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TabHost;
 import android.widget.TabHost.OnTabChangeListener;
 import android.widget.TabHost.TabContentFactory;
 import android.widget.TabHost.TabSpec;
 import android.widget.TabWidget;
+import android.widget.TextView;
 import android.widget.Toast;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
 import com.android.internal.telephony.TelephonyIntents;
@@ -78,6 +86,7 @@ public class IccLockSettings extends SettingsPreferenceFragment
     private static final String DIALOG_PIN = "dialogPin";
     private static final String DIALOG_ERROR = "dialogError";
     private static final String ENABLE_TO_STATE = "enableState";
+    private static final String CURRENT_TAB = "currentTab";
 
     // Save and restore inputted PIN code when configuration changed
     // (ex. portrait<-->landscape) during change PIN code
@@ -112,13 +121,16 @@ public class IccLockSettings extends SettingsPreferenceFragment
     private static final int MSG_CHANGE_ICC_PIN_COMPLETE = 101;
     private static final int MSG_SIM_STATE_CHANGED = 102;
 
+    // @see android.widget.Toast$TN
+    private static final long LONG_DURATION_TIMEOUT = 7000;
+
     // For replies from IccCard interface
     private Handler mHandler = new Handler() {
         public void handleMessage(Message msg) {
             AsyncResult ar = (AsyncResult) msg.obj;
             switch (msg.what) {
                 case MSG_ENABLE_ICC_PIN_COMPLETE:
-                    iccLockChanged(ar.exception == null, msg.arg1);
+                    iccLockChanged(ar.exception == null, msg.arg1, ar.exception);
                     break;
                 case MSG_CHANGE_ICC_PIN_COMPLETE:
                     iccPinChanged(ar.exception == null, msg.arg1);
@@ -233,6 +245,10 @@ public class IccLockSettings extends SettingsPreferenceFragment
 
             mPhone = (sir == null) ? null
                 : PhoneFactory.getPhone(SubscriptionManager.getPhoneId(sir.getSubscriptionId()));
+
+            if (savedInstanceState != null && savedInstanceState.containsKey(CURRENT_TAB)) {
+                mTabHost.setCurrentTabByTag(savedInstanceState.getString(CURRENT_TAB));
+            }
             return view;
         } else {
             mPhone = PhoneFactory.getDefaultPhone();
@@ -247,11 +263,15 @@ public class IccLockSettings extends SettingsPreferenceFragment
     }
 
     private void updatePreferences() {
-        mPinDialog.setEnabled(mPhone != null);
-        mPinToggle.setEnabled(mPhone != null);
+        if (mPinDialog != null) {
+            mPinDialog.setEnabled(mPhone != null);
+        }
+        if (mPinToggle != null) {
+            mPinToggle.setEnabled(mPhone != null);
 
-        if (mPhone != null) {
-            mPinToggle.setChecked(mPhone.getIccCard().getIccLockEnabled());
+            if (mPhone != null) {
+                mPinToggle.setChecked(mPhone.getIccCard().getIccLockEnabled());
+            }
         }
     }
 
@@ -281,6 +301,11 @@ public class IccLockSettings extends SettingsPreferenceFragment
     public void onPause() {
         super.onPause();
         getContext().unregisterReceiver(mSimStateReceiver);
+    }
+
+    @Override
+    public int getHelpResource() {
+        return R.string.help_url_icc_lock;
     }
 
     @Override
@@ -315,6 +340,10 @@ public class IccLockSettings extends SettingsPreferenceFragment
         } else {
             super.onSaveInstanceState(out);
         }
+
+        if (mTabHost != null) {
+            out.putString(CURRENT_TAB, mTabHost.getCurrentTabTag());
+        }
     }
 
     private void showPinDialog() {
@@ -324,6 +353,11 @@ public class IccLockSettings extends SettingsPreferenceFragment
         setDialogValues();
 
         mPinDialog.showPinDialog();
+
+        final EditText editText = mPinDialog.getEditText();
+        if (!TextUtils.isEmpty(mPin) && editText != null) {
+            editText.setSelection(mPin.length());
+        }
     }
 
     private void setDialogValues() {
@@ -426,22 +460,79 @@ public class IccLockSettings extends SettingsPreferenceFragment
         mPinToggle.setEnabled(false);
     }
 
-    private void iccLockChanged(boolean success, int attemptsRemaining) {
+    private void iccLockChanged(boolean success, int attemptsRemaining, Throwable exception) {
         if (success) {
             mPinToggle.setChecked(mToState);
         } else {
-            Toast.makeText(getContext(), getPinPasswordErrorMessage(attemptsRemaining),
-                    Toast.LENGTH_LONG).show();
+            if (exception instanceof CommandException) {
+                CommandException.Error err = ((CommandException)(exception)).getCommandError();
+                if (err == CommandException.Error.PASSWORD_INCORRECT) {
+                    createCustomTextToast(getPinPasswordErrorMessage(attemptsRemaining));
+                } else {
+                    if (mToState) {
+                        Toast.makeText(getContext(), mRes.getString
+                               (R.string.sim_pin_enable_failed), Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(getContext(), mRes.getString
+                               (R.string.sim_pin_disable_failed), Toast.LENGTH_LONG).show();
+                    }
+                }
+            }
         }
         mPinToggle.setEnabled(true);
         resetDialogState();
     }
 
+    private void createCustomTextToast(CharSequence errorMessage) {
+        // Cannot overlay Toast on PUK unlock screen.
+        // The window type of Toast is set by NotificationManagerService.
+        // It can't be overwritten by LayoutParams.type.
+        // Ovarlay a custom window with LayoutParams (TYPE_STATUS_BAR_PANEL) on PUK unlock screen.
+        View v = ((LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE))
+                .inflate(com.android.internal.R.layout.transient_notification, null);
+        TextView tv = (TextView) v.findViewById(com.android.internal.R.id.message);
+        tv.setText(errorMessage);
+
+        final WindowManager.LayoutParams params = new WindowManager.LayoutParams();
+        final Configuration config = v.getContext().getResources().getConfiguration();
+        final int gravity = Gravity.getAbsoluteGravity(
+                getContext().getResources().getInteger(
+                        com.android.internal.R.integer.config_toastDefaultGravity),
+                config.getLayoutDirection());
+        params.gravity = gravity;
+        if ((gravity & Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.FILL_HORIZONTAL) {
+            params.horizontalWeight = 1.0f;
+        }
+        if ((gravity & Gravity.VERTICAL_GRAVITY_MASK) == Gravity.FILL_VERTICAL) {
+            params.verticalWeight = 1.0f;
+        }
+        params.y = getContext().getResources().getDimensionPixelSize(
+                com.android.internal.R.dimen.toast_y_offset);
+
+        params.height = WindowManager.LayoutParams.WRAP_CONTENT;
+        params.width = WindowManager.LayoutParams.WRAP_CONTENT;
+        params.format = PixelFormat.TRANSLUCENT;
+        params.windowAnimations = com.android.internal.R.style.Animation_Toast;
+        params.type = WindowManager.LayoutParams.TYPE_STATUS_BAR_PANEL;
+        params.setTitle(errorMessage);
+        params.flags = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+
+        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        wm.addView(v, params);
+
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                wm.removeViewImmediate(v);
+            }
+        }, LONG_DURATION_TIMEOUT);
+    }
+
     private void iccPinChanged(boolean success, int attemptsRemaining) {
         if (!success) {
-            Toast.makeText(getContext(), getPinPasswordErrorMessage(attemptsRemaining),
-                    Toast.LENGTH_LONG)
-                    .show();
+            createCustomTextToast(getPinPasswordErrorMessage(attemptsRemaining));
         } else {
             Toast.makeText(getContext(), mRes.getString(R.string.sim_change_succeeded),
                     Toast.LENGTH_SHORT)

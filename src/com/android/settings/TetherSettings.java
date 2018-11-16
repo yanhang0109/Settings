@@ -16,101 +16,68 @@
 
 package com.android.settings;
 
+import static android.net.ConnectivityManager.TETHERING_BLUETOOTH;
+import static android.net.ConnectivityManager.TETHERING_USB;
+
 import android.app.Activity;
-import android.app.Dialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothPan;
 import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.hardware.usb.UsbManager;
 import android.net.ConnectivityManager;
-import android.net.wifi.WifiConfiguration;
-import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.UserManager;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.util.Log;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.datausage.DataSaverBackend;
-import com.android.settings.wifi.WifiApDialog;
-import com.android.settings.wifi.WifiApEnabler;
+import com.android.settings.wifi.tether.WifiTetherPreferenceController;
 import com.android.settingslib.TetherUtil;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static android.net.ConnectivityManager.TETHERING_BLUETOOTH;
-import static android.net.ConnectivityManager.TETHERING_USB;
-import static android.net.ConnectivityManager.TETHERING_WIFI;
-
 /*
  * Displays preferences for Tethering.
  */
 public class TetherSettings extends RestrictedSettingsFragment
-        implements DialogInterface.OnClickListener, Preference.OnPreferenceChangeListener,
-        DataSaverBackend.Listener {
+        implements DataSaverBackend.Listener {
 
     private static final String USB_TETHER_SETTINGS = "usb_tether_settings";
-    private static final String ENABLE_WIFI_AP = "enable_wifi_ap";
     private static final String ENABLE_BLUETOOTH_TETHERING = "enable_bluetooth_tethering";
-    private static final String TETHER_CHOICE = "TETHER_TYPE";
     private static final String DATA_SAVER_FOOTER = "disabled_on_data_saver";
-
-    private static final int DIALOG_AP_SETTINGS = 1;
 
     private static final String TAG = "TetheringSettings";
 
     private SwitchPreference mUsbTether;
-
-    private WifiApEnabler mWifiApEnabler;
-    private SwitchPreference mEnableWifiAp;
 
     private SwitchPreference mBluetoothTether;
 
     private BroadcastReceiver mTetherChangeReceiver;
 
     private String[] mUsbRegexs;
-
-    private String[] mWifiRegexs;
-
     private String[] mBluetoothRegexs;
-    private AtomicReference<BluetoothPan> mBluetoothPan = new AtomicReference<BluetoothPan>();
+    private AtomicReference<BluetoothPan> mBluetoothPan = new AtomicReference<>();
 
     private Handler mHandler = new Handler();
     private OnStartTetheringCallback mStartTetheringCallback;
-
-    private static final String WIFI_AP_SSID_AND_SECURITY = "wifi_ap_ssid_and_security";
-    private static final int CONFIG_SUBTEXT = R.string.wifi_tether_configure_subtext;
-
-    private String[] mSecurityType;
-    private Preference mCreateNetwork;
-
-    private WifiApDialog mDialog;
-    private WifiManager mWifiManager;
-    private WifiConfiguration mWifiConfig = null;
     private ConnectivityManager mCm;
 
-    private boolean mRestartWifiApAfterConfigChange;
+    private WifiTetherPreferenceController mWifiTetherPreferenceController;
 
     private boolean mUsbConnected;
     private boolean mMassStorageActive;
 
     private boolean mBluetoothEnableForTether;
-
-    /* Stores the package name and the class name of the provisioning app */
-    private String[] mProvisionApp;
-    private static final int PROVISION_REQUEST = 0;
-
     private boolean mUnavailable;
 
     private DataSaverBackend mDataSaverBackend;
@@ -124,6 +91,13 @@ public class TetherSettings extends RestrictedSettingsFragment
 
     public TetherSettings() {
         super(UserManager.DISALLOW_CONFIG_TETHERING);
+    }
+
+    @Override
+    public void onAttach(Context context) {
+        super.onAttach(context);
+        mWifiTetherPreferenceController =
+                new WifiTetherPreferenceController(context, getLifecycle());
     }
 
     @Override
@@ -152,36 +126,24 @@ public class TetherSettings extends RestrictedSettingsFragment
                     BluetoothProfile.PAN);
         }
 
-        mEnableWifiAp =
-                (SwitchPreference) findPreference(ENABLE_WIFI_AP);
-        Preference wifiApSettings = findPreference(WIFI_AP_SSID_AND_SECURITY);
         mUsbTether = (SwitchPreference) findPreference(USB_TETHER_SETTINGS);
         mBluetoothTether = (SwitchPreference) findPreference(ENABLE_BLUETOOTH_TETHERING);
 
         mDataSaverBackend.addListener(this);
 
         mCm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        mWifiManager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
 
         mUsbRegexs = mCm.getTetherableUsbRegexs();
-        mWifiRegexs = mCm.getTetherableWifiRegexs();
         mBluetoothRegexs = mCm.getTetherableBluetoothRegexs();
 
         final boolean usbAvailable = mUsbRegexs.length != 0;
-        final boolean wifiAvailable = mWifiRegexs.length != 0;
         final boolean bluetoothAvailable = mBluetoothRegexs.length != 0;
 
         if (!usbAvailable || Utils.isMonkeyRunning()) {
             getPreferenceScreen().removePreference(mUsbTether);
         }
 
-        if (wifiAvailable && !Utils.isMonkeyRunning()) {
-            mWifiApEnabler = new WifiApEnabler(activity, mDataSaverBackend, mEnableWifiAp);
-            initWifiTethering();
-        } else {
-            getPreferenceScreen().removePreference(mEnableWifiAp);
-            getPreferenceScreen().removePreference(wifiApSettings);
-        }
+        mWifiTetherPreferenceController.displayPreference(getPreferenceScreen());
 
         if (!bluetoothAvailable) {
             getPreferenceScreen().removePreference(mBluetoothTether);
@@ -213,7 +175,6 @@ public class TetherSettings extends RestrictedSettingsFragment
     @Override
     public void onDataSaverChanged(boolean isDataSaving) {
         mDataSaverEnabled = isDataSaving;
-        mEnableWifiAp.setEnabled(!mDataSaverEnabled);
         mUsbTether.setEnabled(!mDataSaverEnabled);
         mBluetoothTether.setEnabled(!mDataSaverEnabled);
         mDataSaverFooter.setVisible(mDataSaverEnabled);
@@ -225,47 +186,6 @@ public class TetherSettings extends RestrictedSettingsFragment
 
     @Override
     public void onBlacklistStatusChanged(int uid, boolean isBlacklisted)  {
-    }
-
-    private void initWifiTethering() {
-        final Activity activity = getActivity();
-        mWifiConfig = mWifiManager.getWifiApConfiguration();
-        mSecurityType = getResources().getStringArray(R.array.wifi_ap_security);
-
-        mCreateNetwork = findPreference(WIFI_AP_SSID_AND_SECURITY);
-
-        mRestartWifiApAfterConfigChange = false;
-
-        if (mWifiConfig == null) {
-            final String s = activity.getString(
-                    com.android.internal.R.string.wifi_tether_configure_ssid_default);
-            mCreateNetwork.setSummary(String.format(activity.getString(CONFIG_SUBTEXT),
-                    s, mSecurityType[WifiApDialog.OPEN_INDEX]));
-        } else {
-            int index = WifiApDialog.getSecurityTypeIndex(mWifiConfig);
-            mCreateNetwork.setSummary(String.format(activity.getString(CONFIG_SUBTEXT),
-                    mWifiConfig.SSID,
-                    mSecurityType[index]));
-        }
-    }
-
-    @Override
-    public Dialog onCreateDialog(int id) {
-        if (id == DIALOG_AP_SETTINGS) {
-            final Activity activity = getActivity();
-            mDialog = new WifiApDialog(activity, this, mWifiConfig);
-            return mDialog;
-        }
-
-        return null;
-    }
-
-    @Override
-    public int getDialogMetricsCategory(int dialogId) {
-        if (dialogId == DIALOG_AP_SETTINGS) {
-            return MetricsEvent.DIALOG_AP_SETTINGS;
-        }
-        return 0;
     }
 
     private class TetherChangeReceiver extends BroadcastReceiver {
@@ -283,20 +203,6 @@ public class TetherSettings extends RestrictedSettingsFragment
                 updateState(available.toArray(new String[available.size()]),
                         active.toArray(new String[active.size()]),
                         errored.toArray(new String[errored.size()]));
-                if (mWifiManager.getWifiApState() == WifiManager.WIFI_AP_STATE_DISABLED
-                        && mRestartWifiApAfterConfigChange) {
-                    mRestartWifiApAfterConfigChange = false;
-                    Log.d(TAG, "Restarting WifiAp due to prior config change.");
-                    startTethering(TETHERING_WIFI);
-                }
-            } else if (action.equals(WifiManager.WIFI_AP_STATE_CHANGED_ACTION)) {
-                int state = intent.getIntExtra(WifiManager.EXTRA_WIFI_AP_STATE, 0);
-                if (state == WifiManager.WIFI_AP_STATE_DISABLED
-                        && mRestartWifiApAfterConfigChange) {
-                    mRestartWifiApAfterConfigChange = false;
-                    Log.d(TAG, "Restarting WifiAp due to prior config change.");
-                    startTethering(TETHERING_WIFI);
-                }
             } else if (action.equals(Intent.ACTION_MEDIA_SHARED)) {
                 mMassStorageActive = true;
                 updateState();
@@ -348,7 +254,6 @@ public class TetherSettings extends RestrictedSettingsFragment
         mMassStorageActive = Environment.MEDIA_SHARED.equals(Environment.getExternalStorageState());
         mTetherChangeReceiver = new TetherChangeReceiver();
         IntentFilter filter = new IntentFilter(ConnectivityManager.ACTION_TETHER_STATE_CHANGED);
-        filter.addAction(WifiManager.WIFI_AP_STATE_CHANGED_ACTION);
         Intent intent = activity.registerReceiver(mTetherChangeReceiver, filter);
 
         filter = new IntentFilter();
@@ -366,10 +271,6 @@ public class TetherSettings extends RestrictedSettingsFragment
         activity.registerReceiver(mTetherChangeReceiver, filter);
 
         if (intent != null) mTetherChangeReceiver.onReceive(activity, intent);
-        if (mWifiApEnabler != null) {
-            mEnableWifiAp.setOnPreferenceChangeListener(this);
-            mWifiApEnabler.resume();
-        }
 
         updateState();
     }
@@ -384,10 +285,6 @@ public class TetherSettings extends RestrictedSettingsFragment
         getActivity().unregisterReceiver(mTetherChangeReceiver);
         mTetherChangeReceiver = null;
         mStartTetheringCallback = null;
-        if (mWifiApEnabler != null) {
-            mEnableWifiAp.setOnPreferenceChangeListener(null);
-            mWifiApEnabler.pause();
-        }
     }
 
     private void updateState() {
@@ -400,9 +297,8 @@ public class TetherSettings extends RestrictedSettingsFragment
     private void updateState(String[] available, String[] tethered,
             String[] errored) {
         updateUsbState(available, tethered, errored);
-        updateBluetoothState(available, tethered, errored);
+        updateBluetoothState();
     }
-
 
     private void updateUsbState(String[] available, String[] tethered,
             String[] errored) {
@@ -431,41 +327,18 @@ public class TetherSettings extends RestrictedSettingsFragment
         }
 
         if (usbTethered) {
-            mUsbTether.setSummary(R.string.usb_tethering_active_subtext);
             mUsbTether.setEnabled(!mDataSaverEnabled);
             mUsbTether.setChecked(true);
         } else if (usbAvailable) {
-            if (usbError == ConnectivityManager.TETHER_ERROR_NO_ERROR) {
-                mUsbTether.setSummary(R.string.usb_tethering_available_subtext);
-            } else {
-                mUsbTether.setSummary(R.string.usb_tethering_errored_subtext);
-            }
             mUsbTether.setEnabled(!mDataSaverEnabled);
             mUsbTether.setChecked(false);
-        } else if (usbErrored) {
-            mUsbTether.setSummary(R.string.usb_tethering_errored_subtext);
-            mUsbTether.setEnabled(false);
-            mUsbTether.setChecked(false);
-        } else if (mMassStorageActive) {
-            mUsbTether.setSummary(R.string.usb_tethering_storage_active_subtext);
-            mUsbTether.setEnabled(false);
-            mUsbTether.setChecked(false);
         } else {
-            mUsbTether.setSummary(R.string.usb_tethering_unavailable_subtext);
             mUsbTether.setEnabled(false);
             mUsbTether.setChecked(false);
         }
     }
 
-    private void updateBluetoothState(String[] available, String[] tethered,
-            String[] errored) {
-        boolean bluetoothErrored = false;
-        for (String s: errored) {
-            for (String regex : mBluetoothRegexs) {
-                if (s.matches(regex)) bluetoothErrored = true;
-            }
-        }
-
+    private void updateBluetoothState() {
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         if (adapter == null) {
             return;
@@ -473,48 +346,19 @@ public class TetherSettings extends RestrictedSettingsFragment
         int btState = adapter.getState();
         if (btState == BluetoothAdapter.STATE_TURNING_OFF) {
             mBluetoothTether.setEnabled(false);
-            mBluetoothTether.setSummary(R.string.bluetooth_turning_off);
         } else if (btState == BluetoothAdapter.STATE_TURNING_ON) {
             mBluetoothTether.setEnabled(false);
-            mBluetoothTether.setSummary(R.string.bluetooth_turning_on);
         } else {
             BluetoothPan bluetoothPan = mBluetoothPan.get();
             if (btState == BluetoothAdapter.STATE_ON && bluetoothPan != null
                     && bluetoothPan.isTetheringOn()) {
                 mBluetoothTether.setChecked(true);
                 mBluetoothTether.setEnabled(!mDataSaverEnabled);
-                int bluetoothTethered = bluetoothPan.getConnectedDevices().size();
-                if (bluetoothTethered > 1) {
-                    String summary = getString(
-                            R.string.bluetooth_tethering_devices_connected_subtext,
-                            bluetoothTethered);
-                    mBluetoothTether.setSummary(summary);
-                } else if (bluetoothTethered == 1) {
-                    mBluetoothTether.setSummary(
-                            R.string.bluetooth_tethering_device_connected_subtext);
-                } else if (bluetoothErrored) {
-                    mBluetoothTether.setSummary(R.string.bluetooth_tethering_errored_subtext);
-                } else {
-                    mBluetoothTether.setSummary(R.string.bluetooth_tethering_available_subtext);
-                }
             } else {
                 mBluetoothTether.setEnabled(!mDataSaverEnabled);
                 mBluetoothTether.setChecked(false);
-                mBluetoothTether.setSummary(R.string.bluetooth_tethering_off_subtext);
             }
         }
-    }
-
-    @Override
-    public boolean onPreferenceChange(Preference preference, Object value) {
-        boolean enable = (Boolean) value;
-
-        if (enable) {
-            startTethering(TETHERING_WIFI);
-        } else {
-            mCm.stopTethering(TETHERING_WIFI);
-        }
-        return false;
     }
 
     public static boolean isProvisioningNeededButUnavailable(Context context) {
@@ -543,7 +387,6 @@ public class TetherSettings extends RestrictedSettingsFragment
             if (adapter.getState() == BluetoothAdapter.STATE_OFF) {
                 mBluetoothEnableForTether = true;
                 adapter.enable();
-                mBluetoothTether.setSummary(R.string.bluetooth_turning_on);
                 mBluetoothTether.setEnabled(false);
                 return;
             }
@@ -569,35 +412,9 @@ public class TetherSettings extends RestrictedSettingsFragment
                 // connected. Need to update state manually.
                 updateState();
             }
-        } else if (preference == mCreateNetwork) {
-            showDialog(DIALOG_AP_SETTINGS);
         }
 
         return super.onPreferenceTreeClick(preference);
-    }
-
-    public void onClick(DialogInterface dialogInterface, int button) {
-        if (button == DialogInterface.BUTTON_POSITIVE) {
-            mWifiConfig = mDialog.getConfig();
-            if (mWifiConfig != null) {
-                /**
-                 * if soft AP is stopped, bring up
-                 * else restart with new config
-                 * TODO: update config on a running access point when framework support is added
-                 */
-                if (mWifiManager.getWifiApState() == WifiManager.WIFI_AP_STATE_ENABLED) {
-                    Log.d("TetheringSettings",
-                            "Wifi AP config changed while enabled, stop and restart");
-                    mRestartWifiApAfterConfigChange = true;
-                    mCm.stopTethering(TETHERING_WIFI);
-                }
-                mWifiManager.setWifiApConfiguration(mWifiConfig);
-                int index = WifiApDialog.getSecurityTypeIndex(mWifiConfig);
-                mCreateNetwork.setSummary(String.format(getActivity().getString(CONFIG_SUBTEXT),
-                        mWifiConfig.SSID,
-                        mSecurityType[index]));
-            }
-        }
     }
 
     @Override
@@ -620,7 +437,7 @@ public class TetherSettings extends RestrictedSettingsFragment
         final WeakReference<TetherSettings> mTetherSettings;
 
         OnStartTetheringCallback(TetherSettings settings) {
-            mTetherSettings = new WeakReference<TetherSettings>(settings);
+            mTetherSettings = new WeakReference<>(settings);
         }
 
         @Override

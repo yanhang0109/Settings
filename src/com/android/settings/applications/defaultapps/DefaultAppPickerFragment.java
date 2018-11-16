@@ -23,17 +23,18 @@ import android.app.DialogFragment;
 import android.app.Fragment;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.DialogInterface.OnClickListener;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Pair;
 
-import com.android.internal.logging.nano.MetricsProto;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
-import com.android.settings.applications.PackageManagerWrapper;
-import com.android.settings.applications.PackageManagerWrapperImpl;
 import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
 import com.android.settings.widget.RadioButtonPickerFragment;
 import com.android.settings.widget.RadioButtonPreference;
+import com.android.settingslib.applications.DefaultAppInfo;
+import com.android.settingslib.widget.CandidateInfo;
+import com.android.settingslib.wrapper.PackageManagerWrapper;
 
 /**
  * A generic app picker fragment that shows a list of app as radio button group.
@@ -45,7 +46,7 @@ public abstract class DefaultAppPickerFragment extends RadioButtonPickerFragment
     @Override
     public void onAttach(Context context) {
         super.onAttach(context);
-        mPm = new PackageManagerWrapperImpl(context.getPackageManager());
+        mPm = new PackageManagerWrapper(context.getPackageManager());
     }
 
     @Override
@@ -60,6 +61,16 @@ public abstract class DefaultAppPickerFragment extends RadioButtonPickerFragment
                     newConfirmationDialogFragment(selectedKey, confirmationMessage);
             fragment.show(activity.getFragmentManager(), ConfirmationDialogFragment.TAG);
         }
+    }
+
+    @Override
+    protected void onRadioButtonConfirmed(String selectedKey) {
+        mMetricsFeatureProvider.action(getContext(),
+                MetricsEvent.ACTION_SETTINGS_UPDATE_DEFAULT_APP,
+                selectedKey,
+                Pair.create(MetricsEvent.FIELD_CONTEXT, getMetricsCategory()));
+
+        super.onRadioButtonConfirmed(selectedKey);
     }
 
     @Override
@@ -97,7 +108,7 @@ public abstract class DefaultAppPickerFragment extends RadioButtonPickerFragment
 
         @Override
         public int getMetricsCategory() {
-            return MetricsProto.MetricsEvent.DEFAULT_APP_PICKER_CONFIRMATION_DIALOG;
+            return MetricsEvent.DEFAULT_APP_PICKER_CONFIRMATION_DIALOG;
         }
 
         /**

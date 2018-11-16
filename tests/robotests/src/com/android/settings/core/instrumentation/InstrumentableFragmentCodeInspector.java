@@ -20,6 +20,7 @@ import android.app.Fragment;
 import android.util.ArraySet;
 
 import com.android.settings.core.codeinspection.CodeInspector;
+import com.android.settingslib.core.instrumentation.Instrumentable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -51,19 +52,21 @@ public class InstrumentableFragmentCodeInspector extends CodeInspector {
             }
             final String className = clazz.getName();
             // If it's a fragment, it must also be instrumentable.
+            final boolean whitelisted =
+                    grandfather_notImplementingInstrumentable.remove(className);
             if (Fragment.class.isAssignableFrom(clazz)
                     && !Instrumentable.class.isAssignableFrom(clazz)
-                    && !grandfather_notImplementingInstrumentable.contains(className)) {
+                    && !whitelisted) {
                 broken.add(className);
             }
         }
         final StringBuilder sb = new StringBuilder(
-                "All fragment should implement Instrumentable, but the following are not:\n");
+                "All fragments should implement Instrumentable, but the following are not:\n");
         for (String c : broken) {
             sb.append(c).append("\n");
         }
-        assertWithMessage(sb.toString())
-                .that(broken.isEmpty())
-                .isTrue();
+        assertWithMessage(sb.toString()).that(broken.isEmpty()).isTrue();
+        assertNoObsoleteInGrandfatherList("grandfather_not_implementing_instrumentable",
+                grandfather_notImplementingInstrumentable);
     }
 }

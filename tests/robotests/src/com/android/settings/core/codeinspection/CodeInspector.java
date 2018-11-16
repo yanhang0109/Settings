@@ -16,10 +16,9 @@
 
 package com.android.settings.core.codeinspection;
 
-import com.google.common.truth.Truth;
+import static com.google.common.truth.Truth.assertWithMessage;
 
-import org.junit.Assert;
-import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.RuntimeEnvironment;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -35,7 +34,7 @@ public abstract class CodeInspector {
 
     protected static final String PACKAGE_NAME = "com.android.settings";
 
-    protected static final String TEST_CLASS_SUFFIX = "Test";
+    private static final String TEST_CLASS_SUFFIX = "Test";
     private static final String TEST_INNER_CLASS_SIGNATURE = "Test$";
 
     protected final List<Class<?>> mClasses;
@@ -49,6 +48,15 @@ public abstract class CodeInspector {
      */
     public abstract void run();
 
+    protected void assertNoObsoleteInGrandfatherList(String listName, List<String> list) {
+        final StringBuilder obsoleteGrandfatherItems = new StringBuilder(listName)
+            .append(" contains item that should not be grandfathered.\n");
+        for (String c : list) {
+            obsoleteGrandfatherItems.append(c).append("\n");
+        }
+        assertWithMessage(obsoleteGrandfatherItems.toString()).that(list).isEmpty();
+    }
+
     protected boolean isConcreteSettingsClass(Class clazz) {
         // Abstract classes
         if (Modifier.isAbstract(clazz.getModifiers())) {
@@ -56,7 +64,7 @@ public abstract class CodeInspector {
         }
         final String packageName = clazz.getPackage().getName();
         // Classes that are not in Settings
-        if (!packageName.contains(PACKAGE_NAME + ".")) {
+        if (!packageName.contains(PACKAGE_NAME + ".") && !packageName.endsWith(PACKAGE_NAME)) {
             return false;
         }
         final String className = clazz.getName();
@@ -72,9 +80,7 @@ public abstract class CodeInspector {
 
     public static void initializeGrandfatherList(List<String> grandfather, String filename) {
         try {
-            final InputStream in = ShadowApplication.getInstance().getApplicationContext()
-                    .getAssets()
-                    .open(filename);
+            final InputStream in = RuntimeEnvironment.application.getAssets().open(filename);
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
             String line;
             while ((line = reader.readLine()) != null) {
@@ -83,6 +89,5 @@ public abstract class CodeInspector {
         } catch (Exception e) {
             throw new IllegalArgumentException("Error initializing grandfather " + filename, e);
         }
-
     }
 }

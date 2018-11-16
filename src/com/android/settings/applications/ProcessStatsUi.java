@@ -19,8 +19,8 @@ package com.android.settings.applications;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceGroup;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceGroup;
 import android.util.Log;
 import android.util.TimeUtils;
 import android.view.Menu;
@@ -93,6 +93,11 @@ public class ProcessStatsUi extends ProcessStatsBase {
     @Override
     public int getMetricsCategory() {
         return MetricsEvent.APPLICATIONS_PROCESS_STATS_UI;
+    }
+
+    @Override
+    public int getHelpResource() {
+        return R.string.help_uri_process_stats_apps;
     }
 
     @Override

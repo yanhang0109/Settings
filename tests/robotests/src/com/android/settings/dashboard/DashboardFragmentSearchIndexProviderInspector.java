@@ -19,9 +19,11 @@ package com.android.settings.dashboard;
 import android.app.Fragment;
 import android.content.Context;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.BasePreferenceController;
+import com.android.settings.core.PreferenceControllerListHelper;
+import com.android.settings.search.DatabaseIndexingUtils;
 import com.android.settings.search.Indexable;
-import com.android.settings.search2.DatabaseIndexingUtils;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import org.robolectric.RuntimeEnvironment;
 
@@ -47,8 +49,8 @@ public class DashboardFragmentSearchIndexProviderInspector {
         if (provider == null) {
             return true;
         }
-        final List<PreferenceController> controllersFromSearchIndexProvider;
-        final List<PreferenceController> controllersFromFragment;
+        final List<AbstractPreferenceController> controllersFromSearchIndexProvider;
+        final List<AbstractPreferenceController> controllersFromFragment;
         try {
             controllersFromSearchIndexProvider = provider.getPreferenceControllers(context);
         } catch (Throwable e) {
@@ -57,7 +59,15 @@ public class DashboardFragmentSearchIndexProviderInspector {
         }
         try {
             controllersFromFragment =
-                    ((DashboardFragment) fragment).getPreferenceControllers(context);
+                    ((DashboardFragment) fragment).createPreferenceControllers(context);
+            List<BasePreferenceController> controllersFromXml = PreferenceControllerListHelper
+                    .getPreferenceControllersFromXml(context,
+                            ((DashboardFragment) fragment).getPreferenceScreenResId());
+            final List<BasePreferenceController> uniqueControllerFromXml =
+                    PreferenceControllerListHelper.filterControllers(
+                            controllersFromXml, controllersFromFragment);
+            controllersFromFragment.addAll(uniqueControllerFromXml);
+
         } catch (Throwable e) {
             // Can't do much with exception, assume the test passed.
             return true;

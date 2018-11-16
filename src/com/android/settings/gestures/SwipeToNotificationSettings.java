@@ -17,16 +17,16 @@
 package com.android.settings.gestures;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.provider.SearchIndexableResource;
 
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
 import com.android.settings.dashboard.DashboardFragment;
+import com.android.settings.dashboard.suggestions.SuggestionFeatureProvider;
+import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.search.BaseSearchIndexProvider;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -34,7 +34,17 @@ public class SwipeToNotificationSettings extends DashboardFragment {
 
     private static final String TAG = "SwipeToNotifSettings";
 
-    private static final String KEY = "gesture_swipe_down_fingerprint";
+    public static final String PREF_KEY_SUGGESTION_COMPLETE =
+            "pref_swipe_to_notification_suggestion_complete";
+
+    @Override
+    public void onAttach(Context context) {
+        super.onAttach(context);
+        SuggestionFeatureProvider suggestionFeatureProvider = FeatureFactory.getFactory(context)
+                .getSuggestionFeatureProvider(context);
+        SharedPreferences prefs = suggestionFeatureProvider.getSharedPrefs(context);
+        prefs.edit().putBoolean(PREF_KEY_SUGGESTION_COMPLETE, true).apply();
+    }
 
     @Override
     public int getMetricsCategory() {
@@ -51,18 +61,6 @@ public class SwipeToNotificationSettings extends DashboardFragment {
         return R.xml.swipe_to_notification_settings;
     }
 
-    @Override
-    protected List<PreferenceController> getPreferenceControllers(Context context) {
-        return buildPreferenceControllers(context, getLifecycle());
-    }
-
-    private static List<PreferenceController> buildPreferenceControllers(Context context,
-            Lifecycle lifecycle) {
-        final List<PreferenceController> controllers = new ArrayList<>();
-        controllers.add(new SwipeToNotificationPreferenceController(context, lifecycle, KEY));
-        return controllers;
-    }
-
     public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
             new BaseSearchIndexProvider() {
                 @Override
@@ -71,11 +69,6 @@ public class SwipeToNotificationSettings extends DashboardFragment {
                     final SearchIndexableResource sir = new SearchIndexableResource(context);
                     sir.xmlResId = R.xml.swipe_to_notification_settings;
                     return Arrays.asList(sir);
-                }
-
-                @Override
-                public List<PreferenceController> getPreferenceControllers(Context context) {
-                    return buildPreferenceControllers(context, null /* lifecycle */);
                 }
             };
 }

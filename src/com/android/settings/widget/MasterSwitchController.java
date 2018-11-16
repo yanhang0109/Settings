@@ -16,7 +16,7 @@
 
 package com.android.settings.widget;
 
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.widget.Switch;
 import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
@@ -73,10 +73,5 @@ public class MasterSwitchController extends SwitchWidgetController implements
     @Override
     public void setDisabledByAdmin(EnforcedAdmin admin) {
         mPreference.setDisabledByAdmin(admin);
-    }
-
-    @Override
-    public Switch getSwitch() {
-        return mPreference.getSwitch();
     }
 }

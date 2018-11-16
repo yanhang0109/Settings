@@ -22,8 +22,9 @@ import android.content.res.TypedArray;
 import android.graphics.SurfaceTexture;
 import android.media.MediaPlayer;
 import android.net.Uri;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceViewHolder;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceViewHolder;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Surface;
@@ -42,9 +43,13 @@ public class VideoPreference extends Preference {
     private final Context mContext;
 
     private Uri mVideoPath;
-    private MediaPlayer mMediaPlayer;
-    private boolean mAnimationAvailable;
+    @VisibleForTesting
+    MediaPlayer mMediaPlayer;
+    @VisibleForTesting
+    boolean mAnimationAvailable;
     private boolean mVideoReady;
+    private boolean mVideoPaused;
+    private float mAspectRadio = 1.0f;
     private int mPreviewResource;
 
     public VideoPreference(Context context, AttributeSet attrs) {
@@ -72,6 +77,7 @@ public class VideoPreference extends Preference {
 
                 mMediaPlayer.setOnPreparedListener(mediaPlayer -> mediaPlayer.setLooping(true));
                 mAnimationAvailable = true;
+                updateAspectRatio();
             } else {
                 setVisible(false);
             }
@@ -93,16 +99,22 @@ public class VideoPreference extends Preference {
         final TextureView video = (TextureView) holder.findViewById(R.id.video_texture_view);
         final ImageView imageView = (ImageView) holder.findViewById(R.id.video_preview_image);
         final ImageView playButton = (ImageView) holder.findViewById(R.id.video_play_button);
+        final AspectRatioFrameLayout layout = (AspectRatioFrameLayout) holder.findViewById(
+                R.id.video_container);
+
         imageView.setImageResource(mPreviewResource);
+        layout.setAspectRatio(mAspectRadio);
 
         video.setOnClickListener(v -> {
             if (mMediaPlayer != null) {
                 if (mMediaPlayer.isPlaying()) {
                     mMediaPlayer.pause();
                     playButton.setVisibility(View.VISIBLE);
+                    mVideoPaused = true;
                 } else {
                     mMediaPlayer.start();
                     playButton.setVisibility(View.GONE);
+                    mVideoPaused = false;
                 }
             }
         });
@@ -131,8 +143,14 @@ public class VideoPreference extends Preference {
 
             @Override
             public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
-                if (mVideoReady && imageView.getVisibility() == View.VISIBLE) {
-                    imageView.setVisibility(View.GONE);
+                if (mVideoReady) {
+                    if (imageView.getVisibility() == View.VISIBLE) {
+                        imageView.setVisibility(View.GONE);
+                    }
+                    if (!mVideoPaused && mMediaPlayer != null && !mMediaPlayer.isPlaying()) {
+                        mMediaPlayer.start();
+                        playButton.setVisibility(View.GONE);
+                    }
                 }
                 if (mMediaPlayer != null && !mMediaPlayer.isPlaying() &&
                         playButton.getVisibility() != View.VISIBLE) {
@@ -152,7 +170,8 @@ public class VideoPreference extends Preference {
         super.onDetached();
     }
 
-    public void onViewVisible() {
+    public void onViewVisible(boolean videoPaused) {
+        mVideoPaused = videoPaused;
         if (mVideoReady && mMediaPlayer != null && !mMediaPlayer.isPlaying()) {
             mMediaPlayer.seekTo(0);
         }
@@ -163,4 +182,14 @@ public class VideoPreference extends Preference {
             mMediaPlayer.pause();
         }
     }
+
+    public boolean isVideoPaused() {
+        return mVideoPaused;
+    }
+
+    @VisibleForTesting
+    void updateAspectRatio() {
+        mAspectRadio = mMediaPlayer.getVideoWidth() / (float)mMediaPlayer.getVideoHeight();
+    }
+
 }

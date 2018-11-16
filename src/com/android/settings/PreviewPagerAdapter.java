@@ -19,7 +19,7 @@ import android.animation.Animator;
 import android.animation.Animator.AnimatorListener;
 import android.content.Context;
 import android.content.res.Configuration;
-import android.support.v4.view.PagerAdapter;
+import androidx.viewpager.widget.PagerAdapter;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -74,7 +74,7 @@ public class PreviewPagerAdapter extends PagerAdapter {
                 // Create a new configuration for the specified value. It won't
                 // have any theme set, so manually apply the current theme.
                 final Context configContext = context.createConfigurationContext(configurations[j]);
-                configContext.setTheme(context.getThemeResId());
+                configContext.getTheme().setTo(context.getTheme());
 
                 final LayoutInflater configInflater = LayoutInflater.from(configContext);
                 final ViewStub sampleViewStub = new ViewStub(configContext);

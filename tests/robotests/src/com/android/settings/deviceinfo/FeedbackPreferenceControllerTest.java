@@ -15,11 +15,16 @@
  */
 package com.android.settings.deviceinfo;
 
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Mockito.when;
+
 import android.app.Fragment;
 import android.content.Context;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -27,33 +32,38 @@ import org.junit.runner.RunWith;
 import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Mockito.when;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class FeedbackPreferenceControllerTest {
+
     @Mock
     private Fragment mFragment;
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     private Context mContext;
-    private FeedbackPreferenceController mController;
+    @Mock
+    private Preference mPreference;
+    @Mock
+    private PreferenceScreen mScreen;
 
-    public FeedbackPreferenceControllerTest() {
-    }
+    private FeedbackPreferenceController mController;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        this.mController = new FeedbackPreferenceController(this.mFragment, this.mContext);
+        mController = new FeedbackPreferenceController(mFragment, mContext);
+        final String prefKey = mController.getPreferenceKey();
+        when(mScreen.findPreference(prefKey)).thenReturn(mPreference);
     }
 
     @Test
     public void isAvailable_noReporterPackage_shouldReturnFalse() {
-        when(this.mContext.getResources().getString(anyInt())).thenReturn("");
-        assertThat(Boolean.valueOf(this.mController.isAvailable())).isFalse();
+        when(mContext.getResources().getString(anyInt())).thenReturn("");
+        assertThat(mController.isAvailable()).isFalse();
+    }
+
+    @Test
+    public void isVisible_afterUpdateState_shouldBeSameAsIsAvailable() {
+        mController.updateState(mPreference);
+        assertThat(mPreference.isVisible()).isEqualTo(mController.isAvailable());
     }
 }

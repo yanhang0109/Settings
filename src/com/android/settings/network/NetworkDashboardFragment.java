@@ -15,36 +15,38 @@
  */
 package com.android.settings.network;
 
+import static com.android.settings.network.MobilePlanPreferenceController
+        .MANAGE_MOBILE_PLAN_DIALOG_ID;
+
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.Fragment;
 import android.content.Context;
 import android.provider.SearchIndexableResource;
+import androidx.annotation.VisibleForTesting;
+import android.text.BidiFormatter;
 import android.util.Log;
-import android.view.Menu;
-import android.view.MenuInflater;
 
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
 import com.android.settings.dashboard.DashboardFragment;
-import com.android.settings.overlay.FeatureFactory;
+import com.android.settings.dashboard.SummaryLoader;
+import com.android.settings.network.MobilePlanPreferenceController.MobilePlanPreferenceHost;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.wifi.WifiMasterSwitchPreferenceController;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.core.lifecycle.Lifecycle;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static com.android.settings.network.MobilePlanPreferenceController
-        .MANAGE_MOBILE_PLAN_DIALOG_ID;
-
 public class NetworkDashboardFragment extends DashboardFragment implements
-        MobilePlanPreferenceController.MobilePlanPreferenceHost {
+        MobilePlanPreferenceHost {
 
     private static final String TAG = "NetworkDashboardFrag";
-
-    private NetworkResetActionMenuController mNetworkResetController;
 
     @Override
     public int getMetricsCategory() {
@@ -64,42 +66,52 @@ public class NetworkDashboardFragment extends DashboardFragment implements
     @Override
     public void onAttach(Context context) {
         super.onAttach(context);
-        mNetworkResetController = new NetworkResetActionMenuController(context);
+
+        use(AirplaneModePreferenceController.class).setFragment(this);
     }
 
     @Override
-    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        super.onCreateOptionsMenu(menu, inflater);
-        mNetworkResetController.buildMenuItem(menu);
+    public int getHelpResource() {
+        return R.string.help_url_network_dashboard;
     }
 
     @Override
-    protected List<PreferenceController> getPreferenceControllers(Context context) {
-        final AirplaneModePreferenceController airplaneModePreferenceController =
-                new AirplaneModePreferenceController(context, this /* fragment */);
+    protected List<AbstractPreferenceController> createPreferenceControllers(Context context) {
+        return buildPreferenceControllers(context, getLifecycle(), mMetricsFeatureProvider, this
+                /* fragment */,
+                this /* mobilePlanHost */);
+    }
+
+    private static List<AbstractPreferenceController> buildPreferenceControllers(Context context,
+            Lifecycle lifecycle, MetricsFeatureProvider metricsFeatureProvider, Fragment fragment,
+            MobilePlanPreferenceHost mobilePlanHost) {
         final MobilePlanPreferenceController mobilePlanPreferenceController =
-                new MobilePlanPreferenceController(context, this);
+                new MobilePlanPreferenceController(context, mobilePlanHost);
         final WifiMasterSwitchPreferenceController wifiPreferenceController =
-                new WifiMasterSwitchPreferenceController(context, mMetricsFeatureProvider);
+                new WifiMasterSwitchPreferenceController(context, metricsFeatureProvider);
         final MobileNetworkPreferenceController mobileNetworkPreferenceController =
                 new MobileNetworkPreferenceController(context);
         final VpnPreferenceController vpnPreferenceController =
                 new VpnPreferenceController(context);
-        final Lifecycle lifecycle = getLifecycle();
-        lifecycle.addObserver(airplaneModePreferenceController);
-        lifecycle.addObserver(mobilePlanPreferenceController);
-        lifecycle.addObserver(wifiPreferenceController);
-        lifecycle.addObserver(mobileNetworkPreferenceController);
-        lifecycle.addObserver(vpnPreferenceController);
+        final PrivateDnsPreferenceController privateDnsPreferenceController =
+                new PrivateDnsPreferenceController(context);
 
-        final List<PreferenceController> controllers = new ArrayList<>();
-        controllers.add(airplaneModePreferenceController);
+        if (lifecycle != null) {
+            lifecycle.addObserver(mobilePlanPreferenceController);
+            lifecycle.addObserver(wifiPreferenceController);
+            lifecycle.addObserver(mobileNetworkPreferenceController);
+            lifecycle.addObserver(vpnPreferenceController);
+            lifecycle.addObserver(privateDnsPreferenceController);
+        }
+
+        final List<AbstractPreferenceController> controllers = new ArrayList<>();
         controllers.add(mobileNetworkPreferenceController);
         controllers.add(new TetherPreferenceController(context, lifecycle));
         controllers.add(vpnPreferenceController);
         controllers.add(new ProxyPreferenceController(context));
         controllers.add(mobilePlanPreferenceController);
         controllers.add(wifiPreferenceController);
+        controllers.add(privateDnsPreferenceController);
         return controllers;
     }
 
@@ -114,7 +126,7 @@ public class NetworkDashboardFragment extends DashboardFragment implements
         switch (dialogId) {
             case MANAGE_MOBILE_PLAN_DIALOG_ID:
                 final MobilePlanPreferenceController controller =
-                        getPreferenceController(MobilePlanPreferenceController.class);
+                        use(MobilePlanPreferenceController.class);
                 return new AlertDialog.Builder(getActivity())
                         .setMessage(controller.getMobilePlanDialogMessage())
                         .setCancelable(false)
@@ -133,6 +145,67 @@ public class NetworkDashboardFragment extends DashboardFragment implements
         return 0;
     }
 
+    @VisibleForTesting
+    static class SummaryProvider implements SummaryLoader.SummaryProvider {
+
+        private final Context mContext;
+        private final SummaryLoader mSummaryLoader;
+        private final MobileNetworkPreferenceController mMobileNetworkPreferenceController;
+        private final TetherPreferenceController mTetherPreferenceController;
+
+        public SummaryProvider(Context context, SummaryLoader summaryLoader) {
+            this(context, summaryLoader,
+                    new MobileNetworkPreferenceController(context),
+                    new TetherPreferenceController(context, null /* lifecycle */));
+        }
+
+        @VisibleForTesting(otherwise = VisibleForTesting.NONE)
+        SummaryProvider(Context context, SummaryLoader summaryLoader,
+                MobileNetworkPreferenceController mobileNetworkPreferenceController,
+                TetherPreferenceController tetherPreferenceController) {
+            mContext = context;
+            mSummaryLoader = summaryLoader;
+            mMobileNetworkPreferenceController = mobileNetworkPreferenceController;
+            mTetherPreferenceController = tetherPreferenceController;
+        }
+
+
+        @Override
+        public void setListening(boolean listening) {
+            if (listening) {
+                String summary = BidiFormatter.getInstance()
+                        .unicodeWrap(mContext.getString(R.string.wifi_settings_title));
+                if (mMobileNetworkPreferenceController.isAvailable()) {
+                    final String mobileSettingSummary = mContext.getString(
+                            R.string.network_dashboard_summary_mobile);
+                    summary = mContext.getString(R.string.join_many_items_middle, summary,
+                            mobileSettingSummary);
+                }
+                final String dataUsageSettingSummary = mContext.getString(
+                        R.string.network_dashboard_summary_data_usage);
+                summary = mContext.getString(R.string.join_many_items_middle, summary,
+                        dataUsageSettingSummary);
+                if (mTetherPreferenceController.isAvailable()) {
+                    final String hotspotSettingSummary = mContext.getString(
+                            R.string.network_dashboard_summary_hotspot);
+                    summary = mContext.getString(R.string.join_many_items_middle, summary,
+                            hotspotSettingSummary);
+                }
+                mSummaryLoader.setSummary(this, summary);
+            }
+        }
+    }
+
+    public static final SummaryLoader.SummaryProviderFactory SUMMARY_PROVIDER_FACTORY
+            = new SummaryLoader.SummaryProviderFactory() {
+        @Override
+        public SummaryLoader.SummaryProvider createSummaryProvider(Activity activity,
+                SummaryLoader summaryLoader) {
+            return new SummaryProvider(activity, summaryLoader);
+        }
+    };
+
+
     public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
             new BaseSearchIndexProvider() {
                 @Override
@@ -144,8 +217,16 @@ public class NetworkDashboardFragment extends DashboardFragment implements
                 }
 
                 @Override
+                public List<AbstractPreferenceController> createPreferenceControllers(Context
+                        context) {
+                    return buildPreferenceControllers(context, null /* lifecycle */,
+                            null /* metricsFeatureProvider */, null /* fragment */,
+                            null /* mobilePlanHost */);
+                }
+
+                @Override
                 public List<String> getNonIndexableKeys(Context context) {
-                    List<String> keys = new ArrayList<>();
+                    List<String> keys = super.getNonIndexableKeys(context);
                     // Remove master switch as a result
                     keys.add(WifiMasterSwitchPreferenceController.KEY_TOGGLE_WIFI);
                     return keys;

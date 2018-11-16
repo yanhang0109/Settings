@@ -16,21 +16,28 @@
 
 package com.android.settings.applications.defaultapps;
 
+import static com.android.settingslib.TwoTargetPreference.ICON_SIZE_MEDIUM;
+
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Drawable;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.settings.R;
-import com.android.settings.applications.PackageManagerWrapper;
-import com.android.settings.applications.PackageManagerWrapperImpl;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.Utils;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settings.widget.GearPreference;
+import com.android.settingslib.TwoTargetPreference;
+import com.android.settingslib.applications.DefaultAppInfo;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.wrapper.PackageManagerWrapper;
 
-public abstract class DefaultAppPreferenceController extends PreferenceController {
+public abstract class DefaultAppPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     private static final String TAG = "DefaultAppPrefControl";
 
@@ -41,7 +48,7 @@ public abstract class DefaultAppPreferenceController extends PreferenceControlle
 
     public DefaultAppPreferenceController(Context context) {
         super(context);
-        mPackageManager = new PackageManagerWrapperImpl(context.getPackageManager());
+        mPackageManager = new PackageManagerWrapper(context.getPackageManager());
         mUserManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
         mUserId = UserHandle.myUserId();
     }
@@ -50,11 +57,19 @@ public abstract class DefaultAppPreferenceController extends PreferenceControlle
     public void updateState(Preference preference) {
         final DefaultAppInfo app = getDefaultAppInfo();
         CharSequence defaultAppLabel = getDefaultAppLabel();
+        if (preference instanceof TwoTargetPreference) {
+            // For use small icon because we are displaying an app preference.
+            // We only need to do this for TwoTargetPreference because the other prefs are
+            // already using AppPreference so their icon is already normalized.
+            ((TwoTargetPreference) preference).setIconSize(ICON_SIZE_MEDIUM);
+        }
         if (!TextUtils.isEmpty(defaultAppLabel)) {
             preference.setSummary(defaultAppLabel);
+            Utils.setSafeIcon(preference, getDefaultAppIcon());
         } else {
             Log.d(TAG, "No default app");
             preference.setSummary(R.string.app_list_preference_none);
+            preference.setIcon(null);
         }
         mayUpdateGearIcon(app, preference);
     }
@@ -79,6 +94,17 @@ public abstract class DefaultAppPreferenceController extends PreferenceControlle
      */
     protected Intent getSettingIntent(DefaultAppInfo info) {
         //By default return null. It's up to subclasses to provide logic.
+        return null;
+    }
+
+    public Drawable getDefaultAppIcon() {
+        if (!isAvailable()) {
+            return null;
+        }
+        final DefaultAppInfo app = getDefaultAppInfo();
+        if (app != null) {
+            return app.loadIcon();
+        }
         return null;
     }
 

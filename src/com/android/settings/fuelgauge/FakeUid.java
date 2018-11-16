@@ -22,6 +22,7 @@ import android.os.BatteryStats.Timer;
 import android.os.BatteryStats.Uid;
 import android.util.ArrayMap;
 import android.util.SparseArray;
+import android.util.SparseIntArray;
 
 /**
  * Fake UID for testing power usage screen.
@@ -50,12 +51,22 @@ public class FakeUid extends Uid {
     }
 
     @Override
+    public Timer getMulticastWakelockStats() {
+        return null;
+    }
+
+    @Override
     public ArrayMap<String, ? extends Timer> getSyncStats() {
         return null;
     }
 
     @Override
     public ArrayMap<String, ? extends Timer> getJobStats() {
+        return null;
+    }
+
+    @Override
+    public ArrayMap<String, SparseIntArray> getJobCompletionStats() {
         return null;
     }
 
@@ -148,6 +159,11 @@ public class FakeUid extends Uid {
     }
 
     @Override
+    public Timer getWifiScanTimer() {
+        return null;
+    }
+
+    @Override
     public int getWifiScanBackgroundCount(int which)  {
         return 0;
     }
@@ -160,6 +176,11 @@ public class FakeUid extends Uid {
     @Override
     public long getWifiScanBackgroundTime(long elapsedRealtimeUs)  {
         return 0;
+    }
+
+    @Override
+    public Timer getWifiScanBackgroundTimer() {
+        return null;
     }
 
     @Override
@@ -199,6 +220,11 @@ public class FakeUid extends Uid {
 
     @Override
     public Timer getForegroundActivityTimer() {
+        return null;
+    }
+
+    @Override
+    public Timer getForegroundServiceTimer() {
         return null;
     }
 
@@ -322,6 +348,14 @@ public class FakeUid extends Uid {
     }
 
     @Override
+    public void getDeferredJobsCheckinLineLocked(StringBuilder sb, int which) {
+    }
+
+    @Override
+    public void getDeferredJobsLineLocked(StringBuilder sb, int which) {
+    }
+
+    @Override
     public long getMobileRadioApWakeupCount(int which) {
         return 0;
     }
@@ -333,6 +367,26 @@ public class FakeUid extends Uid {
 
     @Override
     public long[] getScreenOffCpuFreqTimes(int which) {
+        return null;
+    }
+
+    @Override
+    public long getCpuActiveTime() {
+        return 0;
+    }
+
+    @Override
+    public long[] getCpuClusterTimes() {
+        return null;
+    }
+
+    @Override
+    public long[] getCpuFreqTimes(int procState, int which) {
+        return null;
+    }
+
+    @Override
+    public long[] getScreenOffCpuFreqTimes(int procState, int which) {
         return null;
     }
 }

@@ -18,6 +18,7 @@ package com.android.settings.fingerprint;
 
 import android.annotation.Nullable;
 import android.content.Intent;
+import android.content.res.Resources;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.UserHandle;
@@ -26,9 +27,10 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
-import com.android.settings.ChooseLockSettingsHelper;
-import com.android.settings.core.InstrumentedActivity;
 import com.android.settings.R;
+import com.android.settings.SetupWizardUtils;
+import com.android.settings.core.InstrumentedActivity;
+import com.android.settings.password.ChooseLockSettingsHelper;
 import com.android.setupwizardlib.GlifLayout;
 
 /**
@@ -46,7 +48,6 @@ public abstract class FingerprintEnrollBase extends InstrumentedActivity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTheme(R.style.Theme_FingerprintEnroll);
         mToken = getIntent().getByteArrayExtra(
                 ChooseLockSettingsHelper.EXTRA_KEY_CHALLENGE_TOKEN);
         if (savedInstanceState != null && mToken == null) {
@@ -54,6 +55,12 @@ public abstract class FingerprintEnrollBase extends InstrumentedActivity
                     ChooseLockSettingsHelper.EXTRA_KEY_CHALLENGE_TOKEN);
         }
         mUserId = getIntent().getIntExtra(Intent.EXTRA_USER_ID, UserHandle.myUserId());
+    }
+
+    @Override
+    protected void onApplyThemeResource(Resources.Theme theme, int resid, boolean first) {
+        resid = SetupWizardUtils.getTheme(getIntent());
+        super.onApplyThemeResource(theme, resid, first);
     }
 
     @Override

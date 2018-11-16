@@ -20,17 +20,17 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.text.TextUtils;
 
 import com.android.internal.app.AssistUtils;
-import com.android.settings.applications.defaultapps.DefaultAppInfo;
 import com.android.settings.applications.defaultapps.DefaultAppPreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settingslib.applications.DefaultAppInfo;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
 import java.util.List;
 
@@ -104,15 +104,15 @@ public class DefaultVoiceInputPreferenceController extends DefaultAppPreferenceC
         }
         for (VoiceInputHelper.InteractionInfo info : mHelper.mAvailableInteractionInfos) {
             if (TextUtils.equals(defaultKey, info.key)) {
-                return new DefaultVoiceInputPicker.VoiceInputDefaultAppInfo(mPackageManager,
-                        mUserId, info, true /* enabled */);
+                return new DefaultVoiceInputPicker.VoiceInputDefaultAppInfo(mContext,
+                        mPackageManager, mUserId, info, true /* enabled */);
             }
         }
 
         for (VoiceInputHelper.RecognizerInfo info : mHelper.mAvailableRecognizerInfos) {
             if (TextUtils.equals(defaultKey, info.key)) {
-                return new DefaultVoiceInputPicker.VoiceInputDefaultAppInfo(mPackageManager,
-                        mUserId, info, true /* enabled */);
+                return new DefaultVoiceInputPicker.VoiceInputDefaultAppInfo(mContext,
+                        mPackageManager, mUserId, info, true /* enabled */);
             }
         }
         return null;

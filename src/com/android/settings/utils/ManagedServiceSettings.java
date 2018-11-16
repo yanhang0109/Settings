@@ -17,23 +17,23 @@
 package com.android.settings.utils;
 
 import android.annotation.Nullable;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.Fragment;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.pm.PackageItemInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceChangeListener;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.SwitchPreference;
+import androidx.preference.PreferenceScreen;
+import android.util.IconDrawableFactory;
+import android.util.Log;
 import android.view.View;
 
 import com.android.internal.logging.nano.MetricsProto;
@@ -41,17 +41,20 @@ import com.android.settings.R;
 import com.android.settings.Utils;
 import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
 import com.android.settings.notification.EmptyTextSettings;
+import com.android.settings.widget.AppSwitchPreference;
+import com.android.settingslib.applications.ServiceListing;
 
-import java.util.Collections;
 import java.util.List;
 
 public abstract class ManagedServiceSettings extends EmptyTextSettings {
+    private static final String TAG = "ManagedServiceSettings";
     private final Config mConfig;
 
     protected Context mContext;
-    private PackageManager mPM;
+    private PackageManager mPm;
     private DevicePolicyManager mDpm;
-    protected ServiceListing mServiceListing;
+    private ServiceListing mServiceListing;
+    private IconDrawableFactory mIconDrawableFactory;
 
     abstract protected Config getConfig();
 
@@ -64,15 +67,17 @@ public abstract class ManagedServiceSettings extends EmptyTextSettings {
         super.onCreate(icicle);
 
         mContext = getActivity();
-        mPM = mContext.getPackageManager();
+        mPm = mContext.getPackageManager();
         mDpm = (DevicePolicyManager) mContext.getSystemService(Context.DEVICE_POLICY_SERVICE);
-        mServiceListing = new ServiceListing(mContext, mConfig);
-        mServiceListing.addCallback(new ServiceListing.Callback() {
-            @Override
-            public void onServicesReloaded(List<ServiceInfo> services) {
-                updateList(services);
-            }
-        });
+        mIconDrawableFactory = IconDrawableFactory.newInstance(mContext);
+        mServiceListing = new ServiceListing.Builder(mContext)
+                .setPermission(mConfig.permission)
+                .setIntentAction(mConfig.intentAction)
+                .setNoun(mConfig.noun)
+                .setSetting(mConfig.setting)
+                .setTag(mConfig.tag)
+                .build();
+        mServiceListing.addCallback(this::updateList);
         setPreferenceScreen(getPreferenceManager().createPreferenceScreen(mContext));
     }
 
@@ -85,8 +90,12 @@ public abstract class ManagedServiceSettings extends EmptyTextSettings {
     @Override
     public void onResume() {
         super.onResume();
-        mServiceListing.reload();
-        mServiceListing.setListening(true);
+        if (!ActivityManager.isLowRamDeviceStatic()) {
+            mServiceListing.reload();
+            mServiceListing.setListening(true);
+        } else {
+            setEmptyText(R.string.disabled_low_ram_device);
+        }
     }
 
     @Override
@@ -101,29 +110,54 @@ public abstract class ManagedServiceSettings extends EmptyTextSettings {
 
         final PreferenceScreen screen = getPreferenceScreen();
         screen.removeAll();
-        Collections.sort(services, new PackageItemInfo.DisplayNameComparator(mPM));
+        services.sort(new PackageItemInfo.DisplayNameComparator(mPm));
         for (ServiceInfo service : services) {
             final ComponentName cn = new ComponentName(service.packageName, service.name);
-            final String title = service.loadLabel(mPM).toString();
-            final SwitchPreference pref = new SwitchPreference(getPrefContext());
+            CharSequence title = null;
+            try {
+                title = mPm.getApplicationInfoAsUser(
+                        service.packageName, 0, getCurrentUser(managedProfileId)).loadLabel(mPm);
+            } catch (PackageManager.NameNotFoundException e) {
+                // unlikely, as we are iterating over live services.
+                Log.e(TAG, "can't find package name", e);
+            }
+            final String summary = service.loadLabel(mPm).toString();
+            final SwitchPreference pref = new AppSwitchPreference(getPrefContext());
             pref.setPersistent(false);
-            pref.setIcon(service.loadIcon(mPM));
-            pref.setTitle(title);
-            pref.setChecked(mServiceListing.isEnabled(cn));
+            pref.setIcon(mIconDrawableFactory.getBadgedIcon(service, service.applicationInfo,
+                    UserHandle.getUserId(service.applicationInfo.uid)));
+            if (title != null && !title.equals(summary)) {
+                pref.setTitle(title);
+                pref.setSummary(summary);
+            } else {
+                pref.setTitle(summary);
+            }
+            pref.setKey(cn.flattenToString());
+            pref.setChecked(isServiceEnabled(cn));
             if (managedProfileId != UserHandle.USER_NULL
                     && !mDpm.isNotificationListenerServicePermitted(
                             service.packageName, managedProfileId)) {
                 pref.setSummary(R.string.work_profile_notification_access_blocked_summary);
             }
-            pref.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
-                @Override
-                public boolean onPreferenceChange(Preference preference, Object newValue) {
-                    final boolean enable = (boolean) newValue;
-                    return setEnabled(cn, title, enable);
-                }
+            pref.setOnPreferenceChangeListener((preference, newValue) -> {
+                final boolean enable = (boolean) newValue;
+                return setEnabled(cn, summary, enable);
             });
+            pref.setKey(cn.flattenToString());
             screen.addPreference(pref);
         }
+        highlightPreferenceIfNeeded();
+    }
+
+    private int getCurrentUser(int managedProfileId) {
+        if (managedProfileId != UserHandle.USER_NULL) {
+            return managedProfileId;
+        }
+        return UserHandle.myUserId();
+    }
+
+    protected boolean isServiceEnabled(ComponentName cn) {
+        return mServiceListing.isEnabled(cn);
     }
 
     protected boolean setEnabled(ComponentName service, String title, boolean enable) {
@@ -143,9 +177,13 @@ public abstract class ManagedServiceSettings extends EmptyTextSettings {
         }
     }
 
+    protected void enable(ComponentName service) {
+        mServiceListing.setEnabled(service, true);
+    }
+
     public static class ScaryWarningDialogFragment extends InstrumentedDialogFragment {
-        static final String KEY_COMPONENT = "c";
-        static final String KEY_LABEL = "l";
+        private static final String KEY_COMPONENT = "c";
+        private static final String KEY_LABEL = "l";
 
         @Override
         public int getMetricsCategory() {
@@ -178,30 +216,92 @@ public abstract class ManagedServiceSettings extends EmptyTextSettings {
                     .setTitle(title)
                     .setCancelable(true)
                     .setPositiveButton(R.string.allow,
-                            new DialogInterface.OnClickListener() {
-                                public void onClick(DialogInterface dialog, int id) {
-                                    parent.mServiceListing.setEnabled(cn, true);
-                                }
-                            })
+                            (dialog, id) -> parent.enable(cn))
                     .setNegativeButton(R.string.deny,
-                            new DialogInterface.OnClickListener() {
-                                public void onClick(DialogInterface dialog, int id) {
-                                    // pass
-                                }
+                            (dialog, id) -> {
+                                // pass
                             })
                     .create();
         }
     }
 
     public static class Config {
-        public String tag;
-        public String setting;
-        public String secondarySetting;
-        public String intentAction;
-        public String permission;
-        public String noun;
-        public int warningDialogTitle;
-        public int warningDialogSummary;
-        public int emptyText;
+        public final String tag;
+        public final String setting;
+        public final String intentAction;
+        public final String permission;
+        public final String noun;
+        public final int warningDialogTitle;
+        public final int warningDialogSummary;
+        public final int emptyText;
+
+        private Config(String tag, String setting, String intentAction, String permission,
+                String noun, int warningDialogTitle, int warningDialogSummary, int emptyText) {
+            this.tag = tag;
+            this.setting = setting;
+            this.intentAction = intentAction;
+            this.permission = permission;
+            this.noun = noun;
+            this.warningDialogTitle = warningDialogTitle;
+            this.warningDialogSummary = warningDialogSummary;
+            this.emptyText = emptyText;
+        }
+
+        public static class Builder{
+            private String mTag;
+            private String mSetting;
+            private String mIntentAction;
+            private String mPermission;
+            private String mNoun;
+            private int mWarningDialogTitle;
+            private int mWarningDialogSummary;
+            private int mEmptyText;
+
+            public Builder setTag(String tag) {
+                mTag = tag;
+                return this;
+            }
+
+            public Builder setSetting(String setting) {
+                mSetting = setting;
+                return this;
+            }
+
+            public Builder setIntentAction(String intentAction) {
+                mIntentAction = intentAction;
+                return this;
+            }
+
+            public Builder setPermission(String permission) {
+                mPermission = permission;
+                return this;
+            }
+
+            public Builder setNoun(String noun) {
+                mNoun = noun;
+                return this;
+            }
+
+            public Builder setWarningDialogTitle(int warningDialogTitle) {
+                mWarningDialogTitle = warningDialogTitle;
+                return this;
+            }
+
+            public Builder setWarningDialogSummary(int warningDialogSummary) {
+                mWarningDialogSummary = warningDialogSummary;
+                return this;
+            }
+
+            public Builder setEmptyText(int emptyText) {
+                mEmptyText = emptyText;
+                return this;
+            }
+
+            public Config build() {
+                return new Config(mTag, mSetting, mIntentAction, mPermission, mNoun,
+                        mWarningDialogTitle, mWarningDialogSummary, mEmptyText);
+            }
+        }
     }
+
 }

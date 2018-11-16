@@ -20,22 +20,24 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.UserHandle;
 import android.provider.Settings;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.TwoStatePreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.TwoStatePreference;
 
 import com.android.internal.app.AssistUtils;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
 import java.util.Arrays;
 import java.util.List;
 
-public class AssistContextPreferenceController extends PreferenceController
-        implements Preference.OnPreferenceChangeListener, LifecycleObserver, OnResume, OnPause {
+public class AssistContextPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, Preference.OnPreferenceChangeListener,
+        LifecycleObserver, OnResume, OnPause {
 
     private static final String KEY_CONTEXT = "context";
 

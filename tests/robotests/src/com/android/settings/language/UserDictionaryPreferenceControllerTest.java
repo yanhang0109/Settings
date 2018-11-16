@@ -16,15 +16,15 @@
 
 package com.android.settings.language;
 
-import android.content.Context;
-import android.speech.tts.TtsEngines;
-import android.support.v7.preference.Preference;
+import static com.google.common.truth.Truth.assertThat;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.UserDictionarySettings;
+import android.content.Context;
+import androidx.preference.Preference;
+
 import com.android.settings.inputmethod.UserDictionaryList;
+import com.android.settings.inputmethod.UserDictionarySettings;
 import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -32,43 +32,28 @@ import org.junit.runner.RunWith;
 import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.RuntimeEnvironment;
 
 import java.util.TreeSet;
 
-import static com.google.common.truth.Truth.assertThat;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class UserDictionaryPreferenceControllerTest {
 
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     private Context mContext;
-    @Mock
-    private TtsEngines mTtsEngines;
     private Preference mPreference;
     private TestController mController;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        FakeFeatureFactory.setupForTest(mContext);
+        FakeFeatureFactory.setupForTest();
         mController = new TestController(mContext);
-        mPreference = new Preference(ShadowApplication.getInstance().getApplicationContext());
+        mPreference = new Preference(RuntimeEnvironment.application);
     }
 
     @Test
-    public void testIsAvailable_noLocale_shouldReturnFalse() {
-        mController.mLocales = null;
-
-        assertThat(mController.isAvailable()).isFalse();
-    }
-
-    @Test
-    public void testIsAvailable_hasLocale_shouldReturnTrue() {
-        mController.mLocales.add("en");
-
+    public void testIsAvailable_shouldReturnTrue() {
         assertThat(mController.isAvailable()).isTrue();
     }
 
@@ -86,10 +71,9 @@ public class UserDictionaryPreferenceControllerTest {
 
         mController.updateState(mPreference);
 
-        assertThat(mPreference.getFragment())
-                .isEqualTo(UserDictionarySettings.class.getCanonicalName());
-        assertThat(mPreference.getExtras().getString("locale"))
-                .isEqualTo("en");
+        final String fragmentName = UserDictionarySettings.class.getCanonicalName();
+        assertThat(mPreference.getFragment()).isEqualTo(fragmentName);
+        assertThat(mPreference.getExtras().getString("locale")).isEqualTo("en");
     }
 
     @Test
@@ -114,9 +98,8 @@ public class UserDictionaryPreferenceControllerTest {
             return mLocales;
         }
 
-        public TestController(Context context) {
+        private TestController(Context context) {
             super(context);
         }
     }
-
 }

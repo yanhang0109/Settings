@@ -15,13 +15,14 @@ package com.android.settings.display;
 
 import android.content.Context;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
 
-public class TapToWakePreferenceController extends PreferenceController implements
-        Preference.OnPreferenceChangeListener {
+public class TapToWakePreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin, Preference.OnPreferenceChangeListener {
 
     private static final String KEY_TAP_TO_WAKE = "tap_to_wake";
 

@@ -14,9 +14,16 @@
 
 package com.android.settings.datausage;
 
+import static android.net.ConnectivityManager.TYPE_MOBILE;
+import static android.net.NetworkPolicyManager.POLICY_REJECT_METERED_BACKGROUND;
+import static android.net.TrafficStats.UID_REMOVED;
+import static android.net.TrafficStats.UID_TETHERING;
+import static android.telephony.TelephonyManager.SIM_STATE_READY;
+
 import android.app.ActivityManager;
 import android.app.LoaderManager.LoaderCallbacks;
 import android.content.Context;
+import android.content.Intent;
 import android.content.Loader;
 import android.content.pm.UserInfo;
 import android.graphics.Color;
@@ -33,13 +40,14 @@ import android.os.RemoteException;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceGroup;
+import android.provider.Settings;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceGroup;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.format.DateUtils;
-import android.text.format.Formatter;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
@@ -49,7 +57,9 @@ import android.widget.Spinner;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
+import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.datausage.CycleAdapter.SpinnerInterface;
+import com.android.settings.widget.LoadingViewController;
 import com.android.settingslib.AppItem;
 import com.android.settingslib.net.ChartData;
 import com.android.settingslib.net.ChartDataLoader;
@@ -59,14 +69,6 @@ import com.android.settingslib.net.UidDetailProvider;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-
-import static android.net.ConnectivityManager.TYPE_MOBILE;
-import static android.net.NetworkPolicyManager.POLICY_REJECT_METERED_BACKGROUND;
-import static android.net.TrafficStats.UID_REMOVED;
-import static android.net.TrafficStats.UID_TETHERING;
-import static android.telephony.TelephonyManager.SIM_STATE_READY;
-import static com.android.settings.datausage.DataUsageSummary.TEST_RADIOS;
-import static com.android.settings.datausage.DataUsageSummary.TEST_RADIOS_PROP;
 
 /**
  * Panel showing data usage history across various networks, including options
@@ -96,19 +98,22 @@ public class DataUsageList extends DataUsageBase {
             };
 
     private INetworkStatsSession mStatsSession;
-
     private ChartDataUsagePreference mChart;
 
-    private NetworkTemplate mTemplate;
-    private int mSubId;
+    @VisibleForTesting
+    NetworkTemplate mTemplate;
+    @VisibleForTesting
+    int mSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
     private ChartData mChartData;
 
+    private LoadingViewController mLoadingViewController;
     private UidDetailProvider mUidDetailProvider;
     private CycleAdapter mCycleAdapter;
     private Spinner mCycleSpinner;
     private Preference mUsageAmount;
     private PreferenceGroup mApps;
     private View mHeader;
+
 
     @Override
     public int getMetricsCategory() {
@@ -137,10 +142,7 @@ public class DataUsageList extends DataUsageBase {
         mUsageAmount = findPreference(KEY_USAGE_AMOUNT);
         mChart = (ChartDataUsagePreference) findPreference(KEY_CHART_DATA);
         mApps = (PreferenceGroup) findPreference(KEY_APPS_GROUP);
-
-        final Bundle args = getArguments();
-        mSubId = args.getInt(EXTRA_SUB_ID, SubscriptionManager.INVALID_SUBSCRIPTION_ID);
-        mTemplate = args.getParcelable(EXTRA_NETWORK_TEMPLATE);
+        processArgument();
     }
 
     @Override
@@ -151,8 +153,12 @@ public class DataUsageList extends DataUsageBase {
         mHeader.findViewById(R.id.filter_settings).setOnClickListener(btn -> {
             final Bundle args = new Bundle();
             args.putParcelable(DataUsageList.EXTRA_NETWORK_TEMPLATE, mTemplate);
-            startFragment(DataUsageList.this, BillingCycleSettings.class.getName(),
-                    R.string.billing_cycle, 0, args);
+            new SubSettingLauncher(getContext())
+                    .setDestination(BillingCycleSettings.class.getName())
+                    .setTitle(R.string.billing_cycle)
+                    .setSourceMetricsCategory(getMetricsCategory())
+                    .setArguments(args)
+                    .launch();
         });
         mCycleSpinner = mHeader.findViewById(R.id.filter_spinner);
         mCycleAdapter = new CycleAdapter(mCycleSpinner.getContext(), new SpinnerInterface() {
@@ -176,7 +182,10 @@ public class DataUsageList extends DataUsageBase {
                 mCycleSpinner.setSelection(position);
             }
         }, mCycleListener, true);
-        setLoading(true, false);
+
+        mLoadingViewController = new LoadingViewController(
+                getView().findViewById(R.id.loading_container), getListView());
+        mLoadingViewController.showLoadingViewDelayed();
     }
 
     @Override
@@ -222,6 +231,20 @@ public class DataUsageList extends DataUsageBase {
         TrafficStats.closeQuietly(mStatsSession);
 
         super.onDestroy();
+    }
+
+    void processArgument() {
+        final Bundle args = getArguments();
+        if (args != null) {
+            mSubId = args.getInt(EXTRA_SUB_ID, SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+            mTemplate = args.getParcelable(EXTRA_NETWORK_TEMPLATE);
+        }
+        if (mTemplate == null && mSubId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+            final Intent intent = getIntent();
+            mSubId = intent.getIntExtra(Settings.EXTRA_SUB_ID,
+                    SubscriptionManager.INVALID_SUBSCRIPTION_ID);
+            mTemplate = intent.getParcelableExtra(Settings.EXTRA_NETWORK_TEMPLATE);
+        }
     }
 
     /**
@@ -305,7 +328,7 @@ public class DataUsageList extends DataUsageBase {
                 SummaryForAllUidLoader.buildArgs(mTemplate, start, end), mSummaryCallbacks);
 
         final long totalBytes = entry != null ? entry.rxBytes + entry.txBytes : 0;
-        final String totalPhrase = Formatter.formatFileSize(context, totalBytes);
+        final CharSequence totalPhrase = DataUsageUtils.formatDataUsage(context, totalBytes);
         mUsageAmount.setTitle(getString(R.string.data_used_template, totalPhrase));
     }
 
@@ -403,10 +426,16 @@ public class DataUsageList extends DataUsageBase {
     }
 
     private void startAppDataUsage(AppItem item) {
-        Bundle args = new Bundle();
+        final Bundle args = new Bundle();
         args.putParcelable(AppDataUsage.ARG_APP_ITEM, item);
         args.putParcelable(AppDataUsage.ARG_NETWORK_TEMPLATE, mTemplate);
-        startFragment(this, AppDataUsage.class.getName(), R.string.app_data_usage, 0, args);
+
+        new SubSettingLauncher(getContext())
+                .setDestination(AppDataUsage.class.getName())
+                .setTitle(R.string.app_data_usage)
+                .setArguments(args)
+                .setSourceMetricsCategory(getMetricsCategory())
+                .launch();
     }
 
     /**
@@ -437,8 +466,8 @@ public class DataUsageList extends DataUsageBase {
      * Test if device has a mobile data radio with SIM in ready state.
      */
     public static boolean hasReadyMobileRadio(Context context) {
-        if (TEST_RADIOS) {
-            return SystemProperties.get(TEST_RADIOS_PROP).contains("mobile");
+        if (DataUsageUtils.TEST_RADIOS) {
+            return SystemProperties.get(DataUsageUtils.TEST_RADIOS_PROP).contains("mobile");
         }
 
         final ConnectivityManager conn = ConnectivityManager.from(context);
@@ -471,8 +500,8 @@ public class DataUsageList extends DataUsageBase {
      * TODO: consider adding to TelephonyManager or SubscriptionManager.
      */
     public static boolean hasReadyMobileRadio(Context context, int subId) {
-        if (TEST_RADIOS) {
-            return SystemProperties.get(TEST_RADIOS_PROP).contains("mobile");
+        if (DataUsageUtils.TEST_RADIOS) {
+            return SystemProperties.get(DataUsageUtils.TEST_RADIOS_PROP).contains("mobile");
         }
 
         final ConnectivityManager conn = ConnectivityManager.from(context);
@@ -523,7 +552,7 @@ public class DataUsageList extends DataUsageBase {
 
         @Override
         public void onLoadFinished(Loader<ChartData> loader, ChartData data) {
-            setLoading(false, true);
+            mLoadingViewController.showContent(false /* animate */);
             mChartData = data;
             mChart.setNetworkStats(mChartData.network);
 

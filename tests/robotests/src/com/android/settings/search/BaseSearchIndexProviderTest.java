@@ -16,87 +16,133 @@
 
 package com.android.settings.search;
 
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 
 import android.content.Context;
 import android.provider.SearchIndexableResource;
 
 import com.android.settings.R;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.BasePreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.spy;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class BaseSearchIndexProviderTest {
 
     private static final String TEST_PREF_KEY = "test_pref_key";
 
-    @Mock
     private Context mContext;
     private BaseSearchIndexProvider mIndexProvider;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
+        mContext = RuntimeEnvironment.application;
         mIndexProvider = spy(BaseSearchIndexProvider.class);
     }
 
     @Test
     public void getNonIndexableKeys_noPreferenceController_shouldReturnEmptyList() {
-        assertThat(mIndexProvider.getNonIndexableKeys(mContext)).isEqualTo(Collections.EMPTY_LIST);
+        assertThat(mIndexProvider.getNonIndexableKeys(mContext)).isEmpty();
+    }
+
+    public static class AvailablePreferenceController
+        extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
+        private AvailablePreferenceController(Context context) {
+            super(context);
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public String getPreferenceKey() {
+            return TEST_PREF_KEY;
+        }
     }
 
     @Test
     public void getNonIndexableKeys_preferenceIsAvailable_shouldReturnEmptyList() {
-        List<PreferenceController> controllers = new ArrayList<>();
-        controllers.add(new PreferenceController(mContext) {
-            @Override
-            public boolean isAvailable() {
-                return true;
-            }
-
-            @Override
-            public String getPreferenceKey() {
-                return TEST_PREF_KEY;
-            }
-        });
-        doReturn(controllers).when(mIndexProvider).getPreferenceControllers(mContext);
+        List<AbstractPreferenceController> controllers = new ArrayList<>();
+        controllers.add(new AvailablePreferenceController(mContext));
+        doReturn(controllers).when(mIndexProvider).createPreferenceControllers(mContext);
 
         assertThat(mIndexProvider.getNonIndexableKeys(mContext)).isEqualTo(Collections.EMPTY_LIST);
     }
 
     @Test
-    public void getNonIndexableKeys_preferenceIsNotAvailable_shouldReturnKey() {
-        List<PreferenceController> controllers = new ArrayList<>();
-        controllers.add(new PreferenceController(mContext) {
+    @Config(qualifiers = "mcc999")
+    public void getAllPreferenceControllers_shouldCreateControllerFromCodeAndXml() {
+
+        final BaseSearchIndexProvider provider = new BaseSearchIndexProvider() {
             @Override
-            public boolean isAvailable() {
-                return false;
+            public List<SearchIndexableResource> getXmlResourcesToIndex(Context context,
+                    boolean enabled) {
+                final SearchIndexableResource sir = new SearchIndexableResource(context);
+                sir.xmlResId = R.xml.location_settings;
+                return Collections.singletonList(sir);
             }
 
             @Override
-            public String getPreferenceKey() {
-                return TEST_PREF_KEY;
+            public List<AbstractPreferenceController> createPreferenceControllers(Context context) {
+                final List<AbstractPreferenceController> controllersFromCode = new ArrayList<>();
+                controllersFromCode.add(new BasePreferenceController(mContext, "TEST_KEY") {
+                    @Override
+                    public int getAvailabilityStatus() {
+                        return AVAILABLE;
+                    }
+                });
+                return controllersFromCode;
             }
-        });
-        doReturn(controllers).when(mIndexProvider).getPreferenceControllers(mContext);
+        };
+
+        final List<AbstractPreferenceController> controllers =
+                provider.getPreferenceControllers(mContext);
+
+        assertThat(controllers).hasSize(2);
+    }
+
+    public static class NotAvailablePreferenceController
+        extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
+
+        private NotAvailablePreferenceController(Context context) {
+            super(context);
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return false;
+        }
+
+        @Override
+        public String getPreferenceKey() {
+            return TEST_PREF_KEY;
+        }
+    }
+
+    @Test
+    public void getNonIndexableKeys_preferenceIsNotAvailable_shouldReturnKey() {
+        List<AbstractPreferenceController> controllers = new ArrayList<>();
+        controllers.add(new NotAvailablePreferenceController(mContext));
+        doReturn(controllers).when(mIndexProvider).createPreferenceControllers(mContext);
 
         assertThat(mIndexProvider.getNonIndexableKeys(mContext)).contains(TEST_PREF_KEY);
     }
@@ -106,10 +152,10 @@ public class BaseSearchIndexProviderTest {
         final BaseSearchIndexProvider provider = new BaseSearchIndexProvider() {
             @Override
             public List<SearchIndexableResource> getXmlResourcesToIndex(Context context,
-                    boolean enabled) {
+                boolean enabled) {
                 final SearchIndexableResource sir = new SearchIndexableResource(context);
                 sir.xmlResId = R.xml.data_usage;
-                return Arrays.asList(sir);
+                return Collections.singletonList(sir);
             }
 
             @Override
@@ -118,10 +164,9 @@ public class BaseSearchIndexProviderTest {
             }
         };
 
-        final List<String> nonIndexableKeys = provider
-                .getNonIndexableKeys(RuntimeEnvironment.application);
+        final List<String> nonIndexableKeys =
+            provider.getNonIndexableKeys(RuntimeEnvironment.application);
 
-        assertThat(nonIndexableKeys).containsAllOf("status_header", "limit_summary",
-                "restrict_background");
+        assertThat(nonIndexableKeys).contains("status_header");
     }
 }

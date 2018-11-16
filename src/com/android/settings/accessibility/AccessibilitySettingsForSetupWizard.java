@@ -21,7 +21,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.ServiceInfo;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.text.TextUtils;
 import android.view.accessibility.AccessibilityManager;
 
@@ -156,8 +156,8 @@ public class AccessibilitySettingsForSetupWizard extends SettingsPreferenceFragm
             preference.setFragment(
                     ToggleScreenMagnificationPreferenceFragmentForSetupWizard.class.getName());
             final Bundle extras = preference.getExtras();
-            MagnificationPreferenceFragment.populateMagnificationGesturesPreferenceExtras(extras,
-                    context);
+            MagnificationGesturesPreferenceController
+                    .populateMagnificationGesturesPreferenceExtras(extras, context);
         }
     }
 }

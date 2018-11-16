@@ -14,12 +14,14 @@
 package com.android.settings.display;
 
 import android.content.Context;
-import android.support.v7.preference.Preference;
 
-import com.android.internal.app.NightDisplayController;
-import com.android.settings.core.PreferenceController;
+import com.android.internal.app.ColorDisplayController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settings.R;
 
-public class NightDisplayPreferenceController extends PreferenceController {
+public class NightDisplayPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin {
 
     private static final String KEY_NIGHT_DISPLAY = "night_display";
 
@@ -27,9 +29,20 @@ public class NightDisplayPreferenceController extends PreferenceController {
         super(context);
     }
 
+    public static boolean isSuggestionComplete(Context context) {
+        final boolean isEnabled = context.getResources().getBoolean(
+                R.bool.config_night_light_suggestion_enabled);
+        // The suggestion is always complete if not enabled.
+        if (!isEnabled) {
+            return true;
+        }
+        final ColorDisplayController controller = new ColorDisplayController(context);
+        return controller.getAutoMode() != ColorDisplayController.AUTO_MODE_DISABLED;
+    }
+
     @Override
     public boolean isAvailable() {
-        return NightDisplayController.isAvailable(mContext);
+        return ColorDisplayController.isAvailable(mContext);
     }
 
     @Override

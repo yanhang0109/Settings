@@ -16,19 +16,28 @@
 
 package com.android.settings.applications;
 
+import static com.android.settings.testutils.ApplicationTestUtils.buildInfo;
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.argThat;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.UserInfo;
-import android.os.Build;
 import android.os.UserHandle;
 import android.os.UserManager;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.testutils.shadow.ShadowUserManager;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settingslib.wrapper.PackageManagerWrapper;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -36,31 +45,14 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowApplication;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Collections;
 import java.util.Set;
 
-import static com.android.settings.testutils.ApplicationTestUtils.buildInfo;
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.argThat;
-import static org.mockito.Matchers.anyObject;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
-
-/**
- * Tests for {@link InstalledAppCounter}.
- */
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION,
-        shadows = {ShadowUserManager.class})
 public final class InstalledAppCounterTest {
 
     private final String APP_1 = "app1";
@@ -113,11 +105,12 @@ public final class InstalledAppCounterTest {
 
     private void expectQueryIntentActivities(int userId, String packageName, boolean launchable) {
         when(mPackageManager.queryIntentActivitiesAsUser(
-                argThat(new IsLaunchIntentFor(packageName)),
+                argThat(isLaunchIntentFor(packageName)),
                 eq(PackageManager.GET_DISABLED_COMPONENTS | PackageManager.MATCH_DIRECT_BOOT_AWARE
                         | PackageManager.MATCH_DIRECT_BOOT_UNAWARE),
-                eq(userId))).thenReturn(launchable ? Arrays.asList(new ResolveInfo())
-                : new ArrayList<ResolveInfo>());
+                eq(userId))).thenReturn(launchable
+                        ? Collections.singletonList(new ResolveInfo())
+                        : new ArrayList<>());
     }
 
     private void testCountInstalledAppsAcrossAllUsers(boolean async) {
@@ -134,10 +127,9 @@ public final class InstalledAppCounterTest {
         // Verify that installed packages were retrieved the current user and the user's managed
         // profile only.
         verify(mPackageManager).getInstalledApplicationsAsUser(anyInt(), eq(MAIN_USER_ID));
-        verify(mPackageManager).getInstalledApplicationsAsUser(anyInt(),
-                eq(MANAGED_PROFILE_ID));
-        verify(mPackageManager, atLeast(0)).queryIntentActivitiesAsUser(anyObject(), anyInt(),
-                anyInt());
+        verify(mPackageManager).getInstalledApplicationsAsUser(anyInt(), eq(MANAGED_PROFILE_ID));
+        verify(mPackageManager, atLeast(0))
+            .queryIntentActivitiesAsUser(any(Intent.class), anyInt(), anyInt());
         verifyNoMoreInteractions(mPackageManager);
 
         // Count once more, considering apps installed by enterprise policy only.
@@ -241,7 +233,7 @@ public final class InstalledAppCounterTest {
 
 
     private class InstalledAppCounterTestable extends InstalledAppCounter {
-        public InstalledAppCounterTestable(int installReason) {
+        private InstalledAppCounterTestable(int installReason) {
             super(mContext, installReason, mPackageManager);
         }
 
@@ -251,16 +243,8 @@ public final class InstalledAppCounterTest {
         }
     }
 
-    private static class IsLaunchIntentFor extends ArgumentMatcher<Intent> {
-        private final String mPackageName;
-
-        IsLaunchIntentFor(String packageName) {
-            mPackageName = packageName;
-        }
-
-        @Override
-        public boolean matches(Object i) {
-            final Intent intent = (Intent) i;
+    private ArgumentMatcher<Intent> isLaunchIntentFor(String packageName) {
+        return intent -> {
             if (intent == null) {
                 return false;
             }
@@ -272,10 +256,10 @@ public final class InstalledAppCounterTest {
                     !categories.contains(Intent.CATEGORY_LAUNCHER)) {
                 return false;
             }
-            if (!mPackageName.equals(intent.getPackage())) {
+            if (!packageName.equals(intent.getPackage())) {
                 return false;
             }
             return true;
-        }
+        };
     }
 }

@@ -16,10 +16,15 @@
 
 package com.android.settings.dashboard.suggestions;
 
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.service.settings.suggestions.Suggestion;
+import androidx.annotation.NonNull;
+import android.util.Pair;
 
-import com.android.settingslib.SuggestionParser;
 import com.android.settingslib.drawer.Tile;
+import com.android.settingslib.suggestions.SuggestionControllerMixin;
 
 import java.util.List;
 
@@ -27,31 +32,41 @@ import java.util.List;
 public interface SuggestionFeatureProvider {
 
     /**
+     * Whether or not the whole suggestion feature is enabled.
+     */
+    boolean isSuggestionEnabled(Context context);
+
+    /**
+     * Returns the component name for SuggestionService.
+     */
+    ComponentName getSuggestionServiceComponent();
+
+    /**
      * Returns true if smart suggestion should be used instead of xml based SuggestionParser.
      */
     boolean isSmartSuggestionEnabled(Context context);
 
-    /** Return true if className is the name of a class of one of your newly added suggestion. */
-    boolean isPresent(String className);
-
     /** Return true if the suggestion has already been completed and does not need to be shown */
-    boolean isSuggestionCompleted(Context context);
+    boolean isSuggestionComplete(Context context, @NonNull ComponentName suggestion);
 
     /**
-     * Ranks the list of suggestions in place.
-     *
-     * @param suggestions   List of suggestion Tiles
-     * @param suggestionIds List of suggestion ids corresponding to the suggestion tiles.
+     * Returns the {@link SharedPreferences} that holds metadata for suggestions.
      */
-    void rankSuggestions(final List<Tile> suggestions, List<String> suggestionIds);
+    SharedPreferences getSharedPrefs(Context context);
+
+    /**
+     * Only keep top few suggestions from exclusive suggestions.
+     */
+    void filterExclusiveSuggestions(List<Tile> suggestions);
 
     /**
      * Dismisses a suggestion.
      */
-    void dismissSuggestion(Context context, SuggestionParser parser, Tile suggestion);
+    void dismissSuggestion(Context context, SuggestionControllerMixin suggestionMixin,
+            Suggestion suggestion);
 
     /**
-     * Returns an identifier for the suggestion
+     * Returns common tagged data for suggestion logging.
      */
-    String getSuggestionIdentifier(Context context, Tile suggestion);
+    Pair<Integer, Object>[] getLoggingTaggedData(Context context);
 }

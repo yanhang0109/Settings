@@ -18,15 +18,24 @@ package com.android.settings.applications.defaultapps;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.ComponentInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.text.TextUtils;
+import android.util.IconDrawableFactory;
+import android.util.Log;
+
+import com.android.settingslib.applications.DefaultAppInfo;
 
 import java.util.List;
 
 public class DefaultBrowserPreferenceController extends DefaultAppPreferenceController {
+
+    private static final String TAG = "BrowserPrefCtrl";
 
     static final Intent BROWSE_PROBE = new Intent()
             .setAction(Intent.ACTION_VIEW)
@@ -60,9 +69,10 @@ public class DefaultBrowserPreferenceController extends DefaultAppPreferenceCont
     @Override
     protected DefaultAppInfo getDefaultAppInfo() {
         try {
-            return new DefaultAppInfo(mPackageManager,
-                    mPackageManager.getPackageManager().getApplicationInfo(
-                            mPackageManager.getDefaultBrowserPackageNameAsUser(mUserId), 0));
+            final String packageName = mPackageManager.getDefaultBrowserPackageNameAsUser(mUserId);
+            Log.d(TAG, "Get default browser package: " + packageName);
+            return new DefaultAppInfo(mContext, mPackageManager,
+                    mPackageManager.getPackageManager().getApplicationInfo(packageName, 0));
         } catch (PackageManager.NameNotFoundException e) {
             return null;
         }
@@ -81,6 +91,18 @@ public class DefaultBrowserPreferenceController extends DefaultAppPreferenceCont
         return getOnlyAppLabel();
     }
 
+    @Override
+    public Drawable getDefaultAppIcon() {
+        if (!isAvailable()) {
+            return null;
+        }
+        final DefaultAppInfo defaultApp = getDefaultAppInfo();
+        if (defaultApp != null) {
+            return defaultApp.loadIcon();
+        }
+        return getOnlyAppIcon();
+    }
+
     private List<ResolveInfo> getCandidates() {
         return mPackageManager.queryIntentActivitiesAsUser(BROWSE_PROBE, PackageManager.MATCH_ALL,
                 mUserId);
@@ -90,7 +112,35 @@ public class DefaultBrowserPreferenceController extends DefaultAppPreferenceCont
         // Resolve that intent and check that the handleAllWebDataURI boolean is set
         final List<ResolveInfo> list = getCandidates();
         if (list != null && list.size() == 1) {
-            return list.get(0).loadLabel(mPackageManager.getPackageManager()).toString();
+            final ResolveInfo info = list.get(0);
+            final String label = info.loadLabel(mPackageManager.getPackageManager()).toString();
+            final ComponentInfo cn = info.getComponentInfo();
+            final String packageName = cn == null ? null : cn.packageName;
+            Log.d(TAG, "Getting label for the only browser app: " + packageName + label);
+            return label;
+        }
+        return null;
+    }
+
+    private Drawable getOnlyAppIcon() {
+        final List<ResolveInfo> list = getCandidates();
+        if (list != null && list.size() == 1) {
+            final ResolveInfo info = list.get(0);
+            final ComponentInfo cn = info.getComponentInfo();
+            final String packageName = cn == null ? null : cn.packageName;
+            if (TextUtils.isEmpty(packageName)) {
+                return null;
+            }
+            final ApplicationInfo appInfo;
+            try {
+                appInfo = mPackageManager.getPackageManager().getApplicationInfo(packageName, 0);
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.w(TAG, "Error getting app info for " + packageName);
+                return null;
+            }
+            Log.d(TAG, "Getting icon for the only browser app: " + packageName);
+            final IconDrawableFactory iconFactory = IconDrawableFactory.newInstance(mContext);
+            return iconFactory.getBadgedIcon(cn, appInfo, mUserId);
         }
         return null;
     }

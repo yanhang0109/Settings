@@ -23,8 +23,10 @@ import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
-import android.support.v7.preference.Preference;
-import android.text.TextUtils;
+
+import com.android.settings.R;
+import com.android.settingslib.applications.DefaultAppInfo;
+import com.android.settingslib.wrapper.PackageManagerWrapper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,32 +55,25 @@ public class DefaultHomePreferenceController extends DefaultAppPreferenceControl
 
     @Override
     public boolean isAvailable() {
-        return true;
-    }
-
-    @Override
-    public void updateState(Preference preference) {
-        super.updateState(preference);
-        final DefaultAppInfo defaultApp = getDefaultAppInfo();
-        final CharSequence defaultAppLabel = defaultApp != null ? defaultApp.loadLabel() : null;
-        if (TextUtils.isEmpty(defaultAppLabel)) {
-            final String onlyAppLabel = getOnlyAppLabel();
-            if (!TextUtils.isEmpty(onlyAppLabel)) {
-                preference.setSummary(onlyAppLabel);
-            }
-        }
+        return mContext.getResources().getBoolean(R.bool.config_show_default_home);
     }
 
     @Override
     protected DefaultAppInfo getDefaultAppInfo() {
         final ArrayList<ResolveInfo> homeActivities = new ArrayList<>();
         final ComponentName currentDefaultHome = mPackageManager.getHomeActivities(homeActivities);
-
-        return new DefaultAppInfo(mPackageManager, mUserId, currentDefaultHome);
+        if (currentDefaultHome != null) {
+            return new DefaultAppInfo(mContext, mPackageManager, mUserId, currentDefaultHome);
+        }
+        final ActivityInfo onlyAppInfo = getOnlyAppInfo(homeActivities);
+        if (onlyAppInfo != null) {
+            return new DefaultAppInfo(mContext, mPackageManager, mUserId,
+                    onlyAppInfo.getComponentName());
+        }
+        return null;
     }
 
-    private String getOnlyAppLabel() {
-        final List<ResolveInfo> homeActivities = new ArrayList<>();
+    private ActivityInfo getOnlyAppInfo(List<ResolveInfo> homeActivities) {
         final List<ActivityInfo> appLabels = new ArrayList<>();
 
         mPackageManager.getHomeActivities(homeActivities);
@@ -90,8 +85,30 @@ public class DefaultHomePreferenceController extends DefaultAppPreferenceControl
             appLabels.add(info);
         }
         return appLabels.size() == 1
-                ? appLabels.get(0).loadLabel(mPackageManager.getPackageManager()).toString()
+                ? appLabels.get(0)
                 : null;
+    }
+
+    @Override
+    protected Intent getSettingIntent(DefaultAppInfo info) {
+        if (info == null) {
+            return null;
+        }
+        final String packageName;
+        if (info.componentName != null) {
+            packageName = info.componentName.getPackageName();
+        } else if (info.packageItemInfo != null) {
+            packageName = info.packageItemInfo.packageName;
+        } else {
+            return null;
+        }
+
+        Intent intent = new Intent(Intent.ACTION_APPLICATION_PREFERENCES)
+                .setPackage(packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        return intent.resolveActivity(mPackageManager.getPackageManager()) != null
+               ? intent
+               : null;
     }
 
     public static boolean hasHomePreference(String pkg, Context context) {
@@ -106,11 +123,10 @@ public class DefaultHomePreferenceController extends DefaultAppPreferenceControl
         return false;
     }
 
-    public static boolean isHomeDefault(String pkg, Context context) {
-        ArrayList<ResolveInfo> homeActivities = new ArrayList<>();
-        PackageManager pm = context.getPackageManager();
+    public static boolean isHomeDefault(String pkg, PackageManagerWrapper pm) {
+        final ArrayList<ResolveInfo> homeActivities = new ArrayList<>();
         ComponentName def = pm.getHomeActivities(homeActivities);
 
-        return def != null && def.getPackageName().equals(pkg);
+        return def == null || def.getPackageName().equals(pkg);
     }
 }

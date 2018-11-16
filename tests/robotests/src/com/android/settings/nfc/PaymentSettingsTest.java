@@ -17,28 +17,25 @@
 
 package com.android.settings.nfc;
 
-import android.content.Context;
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.Mockito.when;
 
+import android.content.Context;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageParser;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
+
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
 
 import java.util.List;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class PaymentSettingsTest {
+
     @Mock
     Context mContext;
 
@@ -58,15 +55,17 @@ public class PaymentSettingsTest {
     public void testNonIndexableKey_NoNFC_KeyAdded() {
         when(mManager.hasSystemFeature(PackageManager.FEATURE_NFC)).thenReturn(false);
 
-        List<String> niks = mFragment.SEARCH_INDEX_DATA_PROVIDER.getNonIndexableKeys(mContext);
-        assertThat(niks).contains(mFragment.PAYMENT_KEY);
+        final List<String> niks =
+            PaymentSettings.SEARCH_INDEX_DATA_PROVIDER.getNonIndexableKeys(mContext);
+        assertThat(niks).contains(PaymentSettings.PAYMENT_KEY);
     }
 
     @Test
     public void testNonIndexableKey_NFC_NoKeyAdded() {
         when(mManager.hasSystemFeature(PackageManager.FEATURE_NFC)).thenReturn(true);
 
-        List<String> niks = mFragment.SEARCH_INDEX_DATA_PROVIDER.getNonIndexableKeys(mContext);
-        assertThat(niks).isNull();
+        final List<String> niks =
+            PaymentSettings.SEARCH_INDEX_DATA_PROVIDER.getNonIndexableKeys(mContext);
+        assertThat(niks).isEmpty();
     }
 }

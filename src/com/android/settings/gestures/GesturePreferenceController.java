@@ -17,28 +17,34 @@
 package com.android.settings.gestures;
 
 import android.content.Context;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.TwoStatePreference;
+import android.os.Bundle;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.TwoStatePreference;
 
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnStart;
-import com.android.settings.core.lifecycle.events.OnStop;
+import com.android.settings.core.TogglePreferenceController;
 import com.android.settings.widget.VideoPreference;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnCreate;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
+import com.android.settingslib.core.lifecycle.events.OnSaveInstanceState;
 
-public abstract class GesturePreferenceController extends PreferenceController
-        implements Preference.OnPreferenceChangeListener, LifecycleObserver, OnStart, OnStop {
+public abstract class GesturePreferenceController extends TogglePreferenceController
+        implements Preference.OnPreferenceChangeListener,
+        LifecycleObserver, OnResume, OnPause, OnCreate, OnSaveInstanceState {
+
+    @VisibleForTesting
+    static final String KEY_VIDEO_PAUSED = "key_video_paused";
 
     private VideoPreference mVideoPreference;
+    @VisibleForTesting
+    boolean mVideoPaused;
 
-    public GesturePreferenceController(Context context, Lifecycle lifecycle) {
-        super(context);
-        if (lifecycle != null) {
-            lifecycle.addObserver(this);
-        }
+    public GesturePreferenceController(Context context, String key) {
+        super(context, key);
     }
 
     @Override
@@ -52,33 +58,48 @@ public abstract class GesturePreferenceController extends PreferenceController
     @Override
     public void updateState(Preference preference) {
         super.updateState(preference);
-        final boolean isEnabled = isSwitchPrefEnabled();
         if (preference != null) {
-            if (preference instanceof TwoStatePreference) {
-                ((TwoStatePreference) preference).setChecked(isEnabled);
-            } else {
-                preference.setSummary(isEnabled
-                        ? R.string.gesture_setting_on
-                        : R.string.gesture_setting_off);
-            }
+            // Different meanings of "Enabled" for the Preference and Controller.
+            preference.setEnabled(canHandleClicks());
         }
     }
 
     @Override
-    public void onStop() {
+    public CharSequence getSummary() {
+        return mContext.getText(
+                isChecked() ? R.string.gesture_setting_on : R.string.gesture_setting_off);
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        if (savedInstanceState != null) {
+            mVideoPaused = savedInstanceState.getBoolean(KEY_VIDEO_PAUSED, false);
+        }
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        outState.putBoolean(KEY_VIDEO_PAUSED, mVideoPaused);
+    }
+
+    @Override
+    public void onPause() {
         if (mVideoPreference != null) {
+            mVideoPaused = mVideoPreference.isVideoPaused();
             mVideoPreference.onViewInvisible();
         }
     }
 
     @Override
-    public void onStart() {
+    public void onResume() {
         if (mVideoPreference != null) {
-            mVideoPreference.onViewVisible();
+            mVideoPreference.onViewVisible(mVideoPaused);
         }
     }
 
     protected abstract String getVideoPrefKey();
 
-    protected abstract boolean isSwitchPrefEnabled();
+    protected boolean canHandleClicks() {
+        return true;
+    }
 }

@@ -52,6 +52,7 @@ public class ToggleFontSizePreferenceFragment extends PreviewSeekBarPreferenceFr
         for (int i = 0; i < strEntryValues.length; ++i) {
             mValues[i] = Float.parseFloat(strEntryValues[i]);
         }
+        getActivity().setTitle(R.string.title_font_size);
     }
 
     @Override
@@ -70,6 +71,11 @@ public class ToggleFontSizePreferenceFragment extends PreviewSeekBarPreferenceFr
         if (getContext() == null) return;
         final ContentResolver resolver = getContext().getContentResolver();
         Settings.System.putFloat(resolver, Settings.System.FONT_SCALE, mValues[mCurrentIndex]);
+    }
+
+    @Override
+    public int getHelpResource() {
+        return R.string.help_url_font_size;
     }
 
     @Override

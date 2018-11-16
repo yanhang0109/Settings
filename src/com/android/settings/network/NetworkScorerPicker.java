@@ -19,13 +19,14 @@ import android.content.Context;
 import android.net.NetworkScoreManager;
 import android.net.NetworkScorerAppData;
 import android.os.Bundle;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.settings.R;
 import com.android.settings.core.InstrumentedPreferenceFragment;
@@ -39,7 +40,7 @@ import java.util.List;
 public class NetworkScorerPicker extends InstrumentedPreferenceFragment implements
         RadioButtonPreference.OnClickListener {
 
-    private NetworkScoreManagerWrapper mNetworkScoreManager;
+    private NetworkScoreManager mNetworkScoreManager;
 
     @Override
     public int getMetricsCategory() {
@@ -49,23 +50,27 @@ public class NetworkScorerPicker extends InstrumentedPreferenceFragment implemen
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         super.onCreatePreferences(savedInstanceState, rootKey);
-        addPreferencesFromResource(R.xml.network_scorer_picker_prefs);
         updateCandidates();
     }
 
     @Override
     public void onAttach(Context context) {
         super.onAttach(context);
-        mNetworkScoreManager = createNetworkScorerManagerWrapper(context);
+        mNetworkScoreManager = createNetworkScorerManager(context);
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                             Bundle savedInstanceState) {
+            Bundle savedInstanceState) {
         final View view = super.onCreateView(inflater, container, savedInstanceState);
         // this is needed so the back button goes back to previous fragment
         setHasOptionsMenu(true);
         return view;
+    }
+
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.network_scorer_picker_prefs;
     }
 
     @VisibleForTesting
@@ -133,7 +138,7 @@ public class NetworkScorerPicker extends InstrumentedPreferenceFragment implemen
     }
 
     @VisibleForTesting
-    NetworkScoreManagerWrapper createNetworkScorerManagerWrapper(Context context) {
-        return new NetworkScoreManagerWrapper(context.getSystemService(NetworkScoreManager.class));
+    NetworkScoreManager createNetworkScorerManager(Context context) {
+        return (NetworkScoreManager) context.getSystemService(Context.NETWORK_SCORE_SERVICE);
     }
 }

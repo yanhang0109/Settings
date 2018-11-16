@@ -15,17 +15,20 @@ package com.android.settings.datausage;
 
 import android.content.Context;
 import android.net.NetworkPolicy;
+import android.net.NetworkPolicyManager;
 import android.net.NetworkStatsHistory;
 import android.text.format.DateUtils;
+import android.util.Pair;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+
 import com.android.settings.R;
 import com.android.settings.Utils;
 import com.android.settingslib.net.ChartData;
-import libcore.util.Objects;
 
-import static android.net.NetworkPolicyManager.computeLastCycleBoundary;
-import static android.net.NetworkPolicyManager.computeNextCycleBoundary;
+import java.time.ZonedDateTime;
+import java.util.Iterator;
+import java.util.Objects;
 
 public class CycleAdapter extends ArrayAdapter<CycleAdapter.CycleItem> {
 
@@ -61,9 +64,9 @@ public class CycleAdapter extends ArrayAdapter<CycleAdapter.CycleItem> {
     }
 
     /**
-     * Rebuild list based on {@link NetworkPolicy#cycleDay}
-     * and available {@link NetworkStatsHistory} data. Always selects the newest
-     * item, updating the inspection range on chartData.
+     * Rebuild list based on {@link NetworkPolicy} and available
+     * {@link NetworkStatsHistory} data. Always selects the newest item,
+     * updating the inspection range on chartData.
      */
      public boolean updateCycleList(NetworkPolicy policy, ChartData chartData) {
         // stash away currently selected cycle to try restoring below
@@ -87,12 +90,12 @@ public class CycleAdapter extends ArrayAdapter<CycleAdapter.CycleItem> {
 
         boolean hasCycles = false;
         if (policy != null) {
-            // find the next cycle boundary
-            long cycleEnd = computeNextCycleBoundary(historyEnd, policy);
-
-            // walk backwards, generating all valid cycle ranges
-            while (cycleEnd > historyStart) {
-                final long cycleStart = computeLastCycleBoundary(cycleEnd, policy);
+            final Iterator<Pair<ZonedDateTime, ZonedDateTime>> it = NetworkPolicyManager
+                    .cycleIterator(policy);
+            while (it.hasNext()) {
+                final Pair<ZonedDateTime, ZonedDateTime> cycle = it.next();
+                final long cycleStart = cycle.first.toInstant().toEpochMilli();
+                final long cycleEnd = cycle.second.toInstant().toEpochMilli();
 
                 final boolean includeCycle;
                 if (chartData != null) {
@@ -106,7 +109,6 @@ public class CycleAdapter extends ArrayAdapter<CycleAdapter.CycleItem> {
                     add(new CycleAdapter.CycleItem(context, cycleStart, cycleEnd));
                     hasCycles = true;
                 }
-                cycleEnd = cycleStart;
             }
         }
 
@@ -139,7 +141,7 @@ public class CycleAdapter extends ArrayAdapter<CycleAdapter.CycleItem> {
             // only force-update cycle when changed; skipping preserves any
             // user-defined inspection region.
             final CycleAdapter.CycleItem selectedItem = getItem(position);
-            if (!Objects.equal(selectedItem, previousItem)) {
+            if (!Objects.equals(selectedItem, previousItem)) {
                 mListener.onItemSelected(null, null, position, 0);
                 return false;
             }

@@ -18,20 +18,22 @@ package com.android.settings.deviceinfo.storage;
 
 import android.content.Context;
 import android.os.storage.VolumeInfo;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.text.TextUtils;
 import android.text.format.Formatter;
 
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
 import com.android.settingslib.deviceinfo.StorageVolumeProvider;
 
 /**
  * StorgaeSummaryPreferenceController updates the donut storage summary preference to have the
  * correct sizes showing.
  */
-public class StorageSummaryDonutPreferenceController extends PreferenceController {
+public class StorageSummaryDonutPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin {
     private long mUsedBytes;
     private long mTotalBytes;
     private StorageSummaryDonutPreference mSummary;

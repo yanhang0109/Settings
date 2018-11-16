@@ -17,99 +17,49 @@
 
 package com.android.settings.search;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import android.content.Context;
 
-import android.util.ArrayMap;
-import com.android.internal.hardware.AmbientDisplayConfiguration;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.display.AutoBrightnessPreferenceController;
-import com.android.settings.gestures.DoubleTapPowerPreferenceController;
-import com.android.settings.gestures.DoubleTapScreenPreferenceController;
-import com.android.settings.gestures.DoubleTwistPreferenceController;
-import com.android.settings.gestures.PickupGesturePreferenceController;
-import com.android.settings.gestures.SwipeToNotificationPreferenceController;
-import com.android.settings.search2.DatabaseIndexingUtils;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
-import com.android.settings.search2.IntentPayload;
-import com.android.settings.search2.ResultPayload;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.RuntimeEnvironment;
 
 import java.util.Map;
 
-import static com.google.common.truth.Truth.assertThat;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class DatabaseIndexingUtilsTest {
 
     private Context mContext;
-    @Mock
-    private AmbientDisplayConfiguration mAmbientDisplayConfiguration;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        mContext = ShadowApplication.getInstance().getApplicationContext();
+        mContext = RuntimeEnvironment.application;
     }
 
     @Test
     public void testGetPreferenceControllerUriMap_BadClassName_ReturnsNull() {
-        Map map = DatabaseIndexingUtils.getPreferenceControllerUriMap("dummy", mContext);
-        assertThat(map).isNull();
+        Map map = DatabaseIndexingUtils.getPayloadKeyMap("dummy", mContext);
+        assertThat(map).isEmpty();
     }
 
     @Test
     public void testGetPreferenceControllerUriMap_NullContext_ReturnsNull() {
-        Map map = DatabaseIndexingUtils.getPreferenceControllerUriMap("dummy", null);
-        assertThat(map).isNull();
-    }
-
-    @Test
-    public void testGetPreferenceControllerUriMap_CompatibleClass_ReturnsValidMap() {
-        String className = "com.android.settings.DisplaySettings";
-
-        Map map = DatabaseIndexingUtils.getPreferenceControllerUriMap(className, mContext);
-        assertThat(map.get("auto_brightness"))
-                .isInstanceOf(AutoBrightnessPreferenceController.class);
+        Map map = DatabaseIndexingUtils.getPayloadKeyMap("dummy", null);
+        assertThat(map).isEmpty();
     }
 
     @Test
     public void testGetPayloadFromMap_NullMap_ReturnsNull() {
-        ResultPayload payload = DatabaseIndexingUtils.getPayloadFromUriMap(null, "");
+        final String className = "com.android.settings.system.SystemDashboardFragment";
+        final Map<String, ResultPayload> map =
+                DatabaseIndexingUtils.getPayloadKeyMap(className, mContext);
+        ResultPayload payload = map.get(null);
         assertThat(payload).isNull();
-    }
-
-    @Test
-    public void testGetPayloadFromMap_MatchingKey_ReturnsPayload() {
-        final String key = "key";
-        PreferenceController prefController = new PreferenceController(mContext) {
-            @Override
-            public boolean isAvailable() {
-                return false;
-            }
-
-            @Override
-            public String getPreferenceKey() {
-                return key;
-            }
-
-            @Override
-            public ResultPayload getResultPayload() {
-                return new IntentPayload(null);
-            }
-        };
-        ArrayMap<String,PreferenceController> map = new ArrayMap<>();
-        map.put(key, prefController);
-
-        ResultPayload payload = DatabaseIndexingUtils.getPayloadFromUriMap(map, key);
-        assertThat(payload).isInstanceOf(IntentPayload.class);
     }
 }

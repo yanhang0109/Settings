@@ -19,11 +19,11 @@ package com.android.settings.deviceinfo.storage;
 import android.app.usage.StorageStatsManager;
 import android.content.Context;
 import android.os.storage.VolumeInfo;
-import android.support.annotation.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
 
-import com.android.settings.utils.AsyncLoader;
 import com.android.settingslib.deviceinfo.PrivateStorageInfo;
 import com.android.settingslib.deviceinfo.StorageVolumeProvider;
+import com.android.settingslib.utils.AsyncLoader;
 
 import java.io.IOException;
 

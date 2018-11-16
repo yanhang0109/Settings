@@ -25,10 +25,9 @@ import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnPreparedListener;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.PreferenceViewHolder;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.PreferenceViewHolder;
 import android.view.Display;
 import android.view.ViewTreeObserver.OnGlobalLayoutListener;
 import android.view.WindowManager;
@@ -144,7 +143,6 @@ public class ToggleScreenMagnificationPreferenceFragment extends
         final PreferenceScreen preferenceScreen = getPreferenceManager().getPreferenceScreen();
         preferenceScreen.setOrderingAsAdded(false);
         mVideoPreference.setOrder(0);
-        mSummaryPreference.setOrder(1);
         mConfigWarningPreference.setOrder(2);
         preferenceScreen.addPreference(mVideoPreference);
         preferenceScreen.addPreference(mConfigWarningPreference);
@@ -175,7 +173,7 @@ public class ToggleScreenMagnificationPreferenceFragment extends
 
     @Override
     protected void onPreferenceToggled(String preferenceKey, boolean enabled) {
-        Settings.Secure.putInt(getContentResolver(), preferenceKey, enabled ? 1 : 0);
+        MagnificationPreferenceFragment.setChecked(getContentResolver(), preferenceKey, enabled);
         updateConfigurationWarningIfNeeded();
     }
 
@@ -184,7 +182,7 @@ public class ToggleScreenMagnificationPreferenceFragment extends
         super.onInstallSwitchBarToggleSwitch();
 
         mSwitchBar.setCheckedInternal(
-                Settings.Secure.getInt(getContentResolver(), mPreferenceKey, 0) == 1);
+                MagnificationPreferenceFragment.isChecked(getContentResolver(), mPreferenceKey));
         mSwitchBar.addOnSwitchChangeListener(this);
     }
 
@@ -215,6 +213,13 @@ public class ToggleScreenMagnificationPreferenceFragment extends
 
         if (arguments.containsKey(AccessibilitySettings.EXTRA_CHECKED)) {
             mInitialSetting = arguments.getBoolean(AccessibilitySettings.EXTRA_CHECKED);
+        }
+
+        if (arguments.containsKey(AccessibilitySettings.EXTRA_TITLE_RES)) {
+            final int titleRes = arguments.getInt(AccessibilitySettings.EXTRA_TITLE_RES);
+            if (titleRes > 0) {
+                getActivity().setTitle(titleRes);
+            }
         }
     }
 

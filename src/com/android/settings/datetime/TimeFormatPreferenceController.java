@@ -19,18 +19,20 @@ package com.android.settings.datetime;
 import android.content.Context;
 import android.content.Intent;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.TwoStatePreference;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
+import androidx.preference.TwoStatePreference;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.Calendar;
 import java.util.Date;
 
-public class TimeFormatPreferenceController extends PreferenceController {
+public class TimeFormatPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     static final String HOURS_12 = "12";
     static final String HOURS_24 = "24";
@@ -61,6 +63,8 @@ public class TimeFormatPreferenceController extends PreferenceController {
         if (!(preference instanceof TwoStatePreference)) {
             return;
         }
+        preference.setEnabled(
+            !AutoTimeFormatPreferenceController.isAutoTimeFormatSelection(mContext));
         ((TwoStatePreference) preference).setChecked(is24Hour());
         final Calendar now = Calendar.getInstance();
         mDummyDate.setTimeZone(now.getTimeZone());
@@ -78,8 +82,7 @@ public class TimeFormatPreferenceController extends PreferenceController {
             return false;
         }
         final boolean is24Hour = ((SwitchPreference) preference).isChecked();
-        set24Hour(is24Hour);
-        timeUpdated(is24Hour);
+        update24HourFormat(mContext, is24Hour);
         mUpdateTimeAndDateCallback.updateTimeAndDateDisplay(mContext);
         return true;
     }
@@ -93,18 +96,29 @@ public class TimeFormatPreferenceController extends PreferenceController {
         return DateFormat.is24HourFormat(mContext);
     }
 
-    private void timeUpdated(boolean is24Hour) {
-        Intent timeChanged = new Intent(Intent.ACTION_TIME_CHANGED);
-        int timeFormatPreference =
-                is24Hour ? Intent.EXTRA_TIME_PREF_VALUE_USE_24_HOUR
-                        : Intent.EXTRA_TIME_PREF_VALUE_USE_12_HOUR;
-        timeChanged.putExtra(Intent.EXTRA_TIME_PREF_24_HOUR_FORMAT, timeFormatPreference);
-        mContext.sendBroadcast(timeChanged);
+    static void update24HourFormat(Context context, Boolean is24Hour) {
+        set24Hour(context, is24Hour);
+        timeUpdated(context, is24Hour);
     }
 
-    private void set24Hour(boolean is24Hour) {
-        Settings.System.putString(mContext.getContentResolver(),
-                Settings.System.TIME_12_24,
-                is24Hour ? HOURS_24 : HOURS_12);
+    static void timeUpdated(Context context, Boolean is24Hour) {
+        Intent timeChanged = new Intent(Intent.ACTION_TIME_CHANGED);
+        timeChanged.addFlags(Intent.FLAG_RECEIVER_INCLUDE_BACKGROUND);
+        int timeFormatPreference;
+        if (is24Hour == null) {
+            timeFormatPreference = Intent.EXTRA_TIME_PREF_VALUE_USE_LOCALE_DEFAULT;
+        } else {
+            timeFormatPreference = is24Hour ? Intent.EXTRA_TIME_PREF_VALUE_USE_24_HOUR
+                : Intent.EXTRA_TIME_PREF_VALUE_USE_12_HOUR;
+        }
+        timeChanged.putExtra(Intent.EXTRA_TIME_PREF_24_HOUR_FORMAT, timeFormatPreference);
+        context.sendBroadcast(timeChanged);
+    }
+
+    static void set24Hour(Context context, Boolean is24Hour) {
+        String value = is24Hour == null ? null :
+            is24Hour ? HOURS_24 : HOURS_12;
+        Settings.System.putString(context.getContentResolver(),
+                Settings.System.TIME_12_24, value);
     }
 }

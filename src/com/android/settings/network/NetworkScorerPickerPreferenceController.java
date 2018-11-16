@@ -16,33 +16,33 @@
 package com.android.settings.network;
 
 import android.content.Context;
+import android.net.NetworkScoreManager;
 import android.net.NetworkScorerAppData;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.BasePreferenceController;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.List;
 
 /**
- * {@link PreferenceController} that shows the active network scorer and toggles the preference
- * based on whether or not there are valid scorers installed.
+ * {@link AbstractPreferenceController} that shows the active network scorer and toggles the
+ * preference based on whether or not there are valid scorers installed.
  */
-public class NetworkScorerPickerPreferenceController extends PreferenceController {
+public class NetworkScorerPickerPreferenceController extends BasePreferenceController {
 
-    private static final String KEY_NETWORK_SCORER_PICKER = "network_scorer_picker";
+    private final NetworkScoreManager mNetworkScoreManager;
 
-    private final NetworkScoreManagerWrapper mNetworkScoreManager;
-
-    public NetworkScorerPickerPreferenceController(Context context,
-            NetworkScoreManagerWrapper networkScoreManager) {
-        super(context);
-        mNetworkScoreManager = networkScoreManager;
+    public NetworkScorerPickerPreferenceController(Context context, String key) {
+        super(context, key);
+        mNetworkScoreManager =
+                (NetworkScoreManager) mContext.getSystemService(Context.NETWORK_SCORE_SERVICE);
     }
 
     @Override
-    public String getPreferenceKey() {
-        return KEY_NETWORK_SCORER_PICKER;
+    public int getAvailabilityStatus() {
+        return AVAILABLE;
     }
 
     @Override
@@ -63,10 +63,5 @@ public class NetworkScorerPickerPreferenceController extends PreferenceControlle
         } else {
             preference.setSummary(scorer.getRecommendationServiceLabel());
         }
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return true;
     }
 }

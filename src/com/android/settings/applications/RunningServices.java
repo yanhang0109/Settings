@@ -15,7 +15,6 @@
  */
 package com.android.settings.applications;
 
-import android.app.Fragment;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -27,7 +26,7 @@ import android.view.ViewGroup;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
-import com.android.settings.Utils;
+import com.android.settings.widget.LoadingViewController;
 
 public class RunningServices extends SettingsPreferenceFragment {
 
@@ -37,22 +36,24 @@ public class RunningServices extends SettingsPreferenceFragment {
     private RunningProcessesView mRunningProcessesView;
     private Menu mOptionsMenu;
     private View mLoadingContainer;
+    private LoadingViewController mLoadingViewController;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        setHasOptionsMenu(true);
+        getActivity().setTitle(R.string.runningservices_settings_title);
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                Bundle savedInstanceState) {
+            Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.manage_applications_running, null);
-        mRunningProcessesView = (RunningProcessesView) rootView.findViewById(
-                R.id.running_processes);
+        mRunningProcessesView = rootView.findViewById(R.id.running_processes);
         mRunningProcessesView.doCreate();
         mLoadingContainer = rootView.findViewById(R.id.loading_container);
+        mLoadingViewController = new LoadingViewController(
+                mLoadingContainer, mRunningProcessesView);
 
         return rootView;
     }
@@ -61,9 +62,9 @@ public class RunningServices extends SettingsPreferenceFragment {
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
         mOptionsMenu = menu;
         menu.add(0, SHOW_RUNNING_SERVICES, 1, R.string.show_running_services)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         menu.add(0, SHOW_BACKGROUND_PROCESSES, 2, R.string.show_background_processes)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         updateOptionsMenu();
     }
 
@@ -71,7 +72,7 @@ public class RunningServices extends SettingsPreferenceFragment {
     public void onResume() {
         super.onResume();
         boolean haveData = mRunningProcessesView.doResume(this, mRunningProcessesAvail);
-        Utils.handleLoadingContainer(mLoadingContainer, mRunningProcessesView, haveData, false);
+        mLoadingViewController.handleLoadingContainer(haveData /* done */, false /* animate */);
     }
 
     @Override
@@ -115,7 +116,7 @@ public class RunningServices extends SettingsPreferenceFragment {
     private final Runnable mRunningProcessesAvail = new Runnable() {
         @Override
         public void run() {
-            Utils.handleLoadingContainer(mLoadingContainer, mRunningProcessesView, true, true);
+            mLoadingViewController.showContent(true /* animate */);
         }
     };
 

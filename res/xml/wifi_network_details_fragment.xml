@@ -15,23 +15,24 @@
 -->
 
 <PreferenceScreen
-        xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:settings="http://schemas.android.com/apk/res/com.android.settings" >
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:settings="http://schemas.android.com/apk/res-auto"
+    settings:initialExpandedChildrenCount="5">
 
-    <!-- Connected Network Header -->
-    <Preference
-            android:key="connection_detail"
-            android:layout="@layout/connection_detail_pref"/>
+    <com.android.settings.applications.LayoutPreference
+        android:key="connection_header"
+        android:layout="@layout/settings_entity_header"
+        android:selectable="false"
+        android:order="-10000"/>
+
+    <!-- Buttons -->
+    <com.android.settings.widget.ActionButtonPreference
+        android:key="buttons"
+        android:selectable="false" />
 
     <!-- General Details Category -->
     <PreferenceCategory
             android:key="general_details_category" >
-        <!-- Buttons -->
-        <com.android.settings.applications.LayoutPreference
-            android:key="buttons"
-            android:layout="@layout/wifi_network_details_two_buttons_panel"
-            android:selectable="false" />
-
         <com.android.settings.wifi.WifiDetailPreference
                 android:key="signal_strength"
                 android:title="@string/wifi_signal"
@@ -48,6 +49,13 @@
                 android:icon="@drawable/ic_security_lock_24dp"
                 android:title="@string/wifi_security"
                 android:selectable="false"/>
+
+        <DropDownPreference
+                android:key="metered"
+                android:icon="@drawable/ic_attach_money_black_24dp"
+                android:title="@string/data_usage_metered_yes"
+                android:entries="@array/wifi_metered_entries"
+                android:entryValues="@array/wifi_metered_values"/>
     </PreferenceCategory>
 
     <!-- Network Details -->
@@ -89,5 +97,4 @@
                 android:key="ipv6_addresses"
                 android:selectable="false"/>
     </PreferenceCategory>
-
 </PreferenceScreen>

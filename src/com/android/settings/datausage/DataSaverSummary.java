@@ -16,7 +16,7 @@ package com.android.settings.datausage;
 
 import android.app.Application;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.widget.Switch;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
@@ -61,13 +61,16 @@ public class DataSaverSummary extends SettingsPreferenceFragment
                 (Application) getContext().getApplicationContext());
         mDataSaverBackend = new DataSaverBackend(getContext());
         mDataUsageBridge = new AppStateDataUsageBridge(mApplicationsState, this, mDataSaverBackend);
-        mSession = mApplicationsState.newSession(this);
+        mSession = mApplicationsState.newSession(this, getLifecycle());
     }
 
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
         mSwitchBar = ((SettingsActivity) getActivity()).getSwitchBar();
+        mSwitchBar.setSwitchBarText(
+                R.string.data_saver_switch_title,
+                R.string.data_saver_switch_title);
         mSwitchBar.show();
         mSwitchBar.addOnSwitchChangeListener(this);
     }
@@ -78,7 +81,6 @@ public class DataSaverSummary extends SettingsPreferenceFragment
         mDataSaverBackend.refreshWhitelist();
         mDataSaverBackend.refreshBlacklist();
         mDataSaverBackend.addListener(this);
-        mSession.resume();
         mDataUsageBridge.resume();
     }
 
@@ -87,7 +89,6 @@ public class DataSaverSummary extends SettingsPreferenceFragment
         super.onPause();
         mDataSaverBackend.remListener(this);
         mDataUsageBridge.pause();
-        mSession.pause();
     }
 
     @Override
@@ -107,7 +108,7 @@ public class DataSaverSummary extends SettingsPreferenceFragment
     }
 
     @Override
-    protected int getHelpResource() {
+    public int getHelpResource() {
         return R.string.help_url_data_saver;
     }
 

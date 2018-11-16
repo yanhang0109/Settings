@@ -22,23 +22,26 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import android.provider.Settings;
+import androidx.core.text.BidiFormatter;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.text.TextUtils;
 
 import com.android.settings.R;
 import com.android.settings.Utils;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
 /**
- * {@link PreferenceController} that updates MAC/IP address.
+ * {@link PreferenceControllerMixin} that updates MAC/IP address.
  */
-public class WifiInfoPreferenceController extends PreferenceController implements
-        LifecycleObserver, OnResume, OnPause {
+public class WifiInfoPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, LifecycleObserver, OnResume, OnPause {
 
     private static final String KEY_CURRENT_IP_ADDRESS = "current_ip_address";
     private static final String KEY_MAC_ADDRESS = "mac_address";
@@ -94,16 +97,24 @@ public class WifiInfoPreferenceController extends PreferenceController implement
     public void updateWifiInfo() {
         if (mWifiMacAddressPref != null) {
             final WifiInfo wifiInfo = mWifiManager.getConnectionInfo();
+            final int macRandomizationMode = Settings.Global.getInt(mContext.getContentResolver(),
+                    Settings.Global.WIFI_CONNECTED_MAC_RANDOMIZATION_ENABLED, 0);
             final String macAddress = wifiInfo == null ? null : wifiInfo.getMacAddress();
-            mWifiMacAddressPref.setSummary(!TextUtils.isEmpty(macAddress)
-                    ? macAddress
-                    : mContext.getString(R.string.status_unavailable));
+
+            if (TextUtils.isEmpty(macAddress)) {
+                mWifiMacAddressPref.setSummary(R.string.status_unavailable);
+            } else if (macRandomizationMode == 1
+                    && WifiInfo.DEFAULT_MAC_ADDRESS.equals(macAddress)) {
+                mWifiMacAddressPref.setSummary(R.string.wifi_status_mac_randomized);
+            } else {
+                mWifiMacAddressPref.setSummary(macAddress);
+            }
         }
         if (mWifiIpAddressPref != null) {
             final String ipAddress = Utils.getWifiIpAddresses(mContext);
             mWifiIpAddressPref.setSummary(ipAddress == null
                     ? mContext.getString(R.string.status_unavailable)
-                    : ipAddress);
+                    : BidiFormatter.getInstance().unicodeWrap(ipAddress));
         }
     }
 

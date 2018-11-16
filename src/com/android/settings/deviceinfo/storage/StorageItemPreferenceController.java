@@ -20,29 +20,29 @@ import android.app.Fragment;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
 import android.net.TrafficStats;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.storage.VolumeInfo;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.util.Log;
 import android.util.SparseArray;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.Settings;
-import com.android.settings.Utils;
-import com.android.settings.applications.ManageApplications;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.settings.applications.manageapplications.ManageApplications;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.deviceinfo.PrivateVolumeSettings.SystemInfoFragment;
 import com.android.settings.deviceinfo.StorageItemPreference;
 import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
 import com.android.settingslib.deviceinfo.StorageMeasurement;
 import com.android.settingslib.deviceinfo.StorageVolumeProvider;
 
@@ -54,10 +54,10 @@ import java.util.Map;
  * StorageItemPreferenceController handles the storage line items which summarize the storage
  * categorization breakdown.
  */
-public class StorageItemPreferenceController extends PreferenceController {
+public class StorageItemPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin {
     private static final String TAG = "StorageItemPreference";
 
-    private static final String IMAGE_MIME_TYPE = "image/*";
     private static final String SYSTEM_FRAGMENT_TAG = "SystemInfo";
 
     @VisibleForTesting
@@ -91,6 +91,7 @@ public class StorageItemPreferenceController extends PreferenceController {
     private StorageItemPreference mAppPreference;
     private StorageItemPreference mFilePreference;
     private StorageItemPreference mSystemPreference;
+    private boolean mIsWorkProfile;
 
     private static final String AUTHORITY_MEDIA = "com.android.providers.media.documents";
 
@@ -102,6 +103,16 @@ public class StorageItemPreferenceController extends PreferenceController {
         mSvp = svp;
         mMetricsFeatureProvider = FeatureFactory.getFactory(context).getMetricsFeatureProvider();
         mUserId = UserHandle.myUserId();
+    }
+
+    public StorageItemPreferenceController(
+            Context context,
+            Fragment hostFragment,
+            VolumeInfo volume,
+            StorageVolumeProvider svp,
+            boolean isWorkProfile) {
+        this(context, hostFragment, volume, svp);
+        mIsWorkProfile = isWorkProfile;
     }
 
     @Override
@@ -196,29 +207,24 @@ public class StorageItemPreferenceController extends PreferenceController {
     public void setUserId(UserHandle userHandle) {
         mUserId = userHandle.getIdentifier();
 
-        PackageManager pm = mContext.getPackageManager();
-        badgePreference(pm, userHandle, mPhotoPreference);
-        badgePreference(pm, userHandle, mMoviesPreference);
-        badgePreference(pm, userHandle, mAudioPreference);
-        badgePreference(pm, userHandle, mGamePreference);
-        badgePreference(pm, userHandle, mAppPreference);
-        badgePreference(pm, userHandle, mSystemPreference);
-        badgePreference(pm, userHandle, mFilePreference);
+        tintPreference(mPhotoPreference);
+        tintPreference(mMoviesPreference);
+        tintPreference(mAudioPreference);
+        tintPreference(mGamePreference);
+        tintPreference(mAppPreference);
+        tintPreference(mSystemPreference);
+        tintPreference(mFilePreference);
     }
 
-    private void badgePreference(PackageManager pm, UserHandle userHandle, Preference preference) {
+    private void tintPreference(Preference preference) {
         if (preference != null) {
-            Drawable currentIcon = preference.getIcon();
-            // Sigh... Applying the badge to the icon clobbers the tint on the base drawable.
-            // For some reason, re-applying it here means the tint remains.
-            currentIcon = applyTint(mContext, currentIcon);
-            preference.setIcon(pm.getUserBadgedIcon(currentIcon, userHandle));
+            preference.setIcon(applyTint(mContext, preference.getIcon()));
         }
     }
 
     private static Drawable applyTint(Context context, Drawable icon) {
         TypedArray array =
-                context.obtainStyledAttributes(new int[]{android.R.attr.colorControlNormal});
+                context.obtainStyledAttributes(new int[] {android.R.attr.colorControlNormal});
         icon = icon.mutate();
         icon.setTint(array.getColor(0, 0));
         array.recycle();
@@ -246,7 +252,8 @@ public class StorageItemPreferenceController extends PreferenceController {
         // TODO(b/35927909): Figure out how to split out apps which are only installed for work
         //       profiles in order to attribute those app's code bytes only to that profile.
         mPhotoPreference.setStorageSize(
-                data.externalStats.imageBytes + data.externalStats.videoBytes, mTotalSize);
+                data.photosAppsSize + data.externalStats.imageBytes + data.externalStats.videoBytes,
+                mTotalSize);
         mAudioPreference.setStorageSize(
                 data.musicAppsSize + data.externalStats.audioBytes, mTotalSize);
         mGamePreference.setStorageSize(data.gamesSize, mTotalSize);
@@ -267,10 +274,12 @@ public class StorageItemPreferenceController extends PreferenceController {
             long attributedSize = 0;
             for (int i = 0; i < result.size(); i++) {
                 final StorageAsyncLoader.AppsStorageResult otherData = result.valueAt(i);
-                attributedSize += otherData.gamesSize
-                        + otherData.musicAppsSize
-                        + otherData.videoAppsSize
-                        + otherData.otherAppsSize;
+                attributedSize +=
+                        otherData.gamesSize
+                                + otherData.musicAppsSize
+                                + otherData.videoAppsSize
+                                + otherData.photosAppsSize
+                                + otherData.otherAppsSize;
                 attributedSize += otherData.externalStats.totalBytes
                         - otherData.externalStats.appBytes;
             }
@@ -304,12 +313,18 @@ public class StorageItemPreferenceController extends PreferenceController {
     }
 
     private Intent getPhotosIntent() {
-        Intent intent = new Intent();
-        intent.setAction(android.content.Intent.ACTION_VIEW);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
-        intent.setType(IMAGE_MIME_TYPE);
-        intent.putExtra(Intent.EXTRA_FROM_STORAGE, true);
-        return intent;
+        Bundle args = getWorkAnnotatedBundle(2);
+        args.putString(
+                ManageApplications.EXTRA_CLASSNAME, Settings.PhotosStorageActivity.class.getName());
+        args.putInt(
+                ManageApplications.EXTRA_STORAGE_TYPE,
+                ManageApplications.STORAGE_TYPE_PHOTOS_VIDEOS);
+        return new SubSettingLauncher(mContext)
+                .setDestination(ManageApplications.class.getName())
+                .setTitle(R.string.storage_photos_videos)
+                .setArguments(args)
+                .setSourceMetricsCategory(mMetricsFeatureProvider.getMetricsCategory(mFragment))
+                .toIntent();
     }
 
     private Intent getAudioIntent() {
@@ -317,48 +332,66 @@ public class StorageItemPreferenceController extends PreferenceController {
             return null;
         }
 
-        Bundle args = new Bundle();
+        Bundle args = getWorkAnnotatedBundle(4);
         args.putString(ManageApplications.EXTRA_CLASSNAME,
                 Settings.StorageUseActivity.class.getName());
         args.putString(ManageApplications.EXTRA_VOLUME_UUID, mVolume.getFsUuid());
         args.putString(ManageApplications.EXTRA_VOLUME_NAME, mVolume.getDescription());
         args.putInt(ManageApplications.EXTRA_STORAGE_TYPE, ManageApplications.STORAGE_TYPE_MUSIC);
-        return Utils.onBuildStartFragmentIntent(mContext,
-                ManageApplications.class.getName(), args, null, R.string.storage_music_audio, null,
-                false, mMetricsFeatureProvider.getMetricsCategory(mFragment));
+        return new SubSettingLauncher(mContext)
+                .setDestination(ManageApplications.class.getName())
+                .setTitle(R.string.storage_music_audio)
+                .setArguments(args)
+                .setSourceMetricsCategory(mMetricsFeatureProvider.getMetricsCategory(mFragment))
+                .toIntent();
     }
 
     private Intent getAppsIntent() {
         if (mVolume == null) {
             return null;
         }
-
-        Bundle args = new Bundle();
+        final Bundle args = getWorkAnnotatedBundle(3);
         args.putString(ManageApplications.EXTRA_CLASSNAME,
                 Settings.StorageUseActivity.class.getName());
         args.putString(ManageApplications.EXTRA_VOLUME_UUID, mVolume.getFsUuid());
         args.putString(ManageApplications.EXTRA_VOLUME_NAME, mVolume.getDescription());
-        return Utils.onBuildStartFragmentIntent(mContext,
-                ManageApplications.class.getName(), args, null, R.string.apps_storage, null,
-                false, mMetricsFeatureProvider.getMetricsCategory(mFragment));
+        return new SubSettingLauncher(mContext)
+                .setDestination(ManageApplications.class.getName())
+                .setTitle(R.string.apps_storage)
+                .setArguments(args)
+                .setSourceMetricsCategory(mMetricsFeatureProvider.getMetricsCategory(mFragment))
+                .toIntent();
     }
 
     private Intent getGamesIntent() {
-        Bundle args = new Bundle(1);
+        final Bundle args = getWorkAnnotatedBundle(1);
         args.putString(ManageApplications.EXTRA_CLASSNAME,
                 Settings.GamesStorageActivity.class.getName());
-        return Utils.onBuildStartFragmentIntent(mContext,
-                ManageApplications.class.getName(), args, null, R.string.game_storage_settings,
-                null, false, mMetricsFeatureProvider.getMetricsCategory(mFragment));
+        return new SubSettingLauncher(mContext)
+                .setDestination(ManageApplications.class.getName())
+                .setTitle(R.string.game_storage_settings)
+                .setArguments(args)
+                .setSourceMetricsCategory(mMetricsFeatureProvider.getMetricsCategory(mFragment))
+                .toIntent();
     }
 
     private Intent getMoviesIntent() {
-        Bundle args = new Bundle(1);
+        final Bundle args = getWorkAnnotatedBundle(1);
         args.putString(ManageApplications.EXTRA_CLASSNAME,
                 Settings.MoviesStorageActivity.class.getName());
-        return Utils.onBuildStartFragmentIntent(mContext,
-                ManageApplications.class.getName(), args, null, R.string.storage_movies_tv,
-                null, false, mMetricsFeatureProvider.getMetricsCategory(mFragment));
+        return new SubSettingLauncher(mContext)
+                .setDestination(ManageApplications.class.getName())
+                .setTitle(R.string.storage_movies_tv)
+                .setArguments(args)
+                .setSourceMetricsCategory(mMetricsFeatureProvider.getMetricsCategory(mFragment))
+                .toIntent();
+    }
+
+    private Bundle getWorkAnnotatedBundle(int additionalCapacity) {
+        final Bundle args = new Bundle(2 + additionalCapacity);
+        args.putBoolean(ManageApplications.EXTRA_WORK_ONLY, mIsWorkProfile);
+        args.putInt(ManageApplications.EXTRA_WORK_ID, mUserId);
+        return args;
     }
 
     private Intent getFilesIntent() {

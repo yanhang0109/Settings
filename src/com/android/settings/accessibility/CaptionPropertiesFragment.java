@@ -23,10 +23,10 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.preference.PreferenceFrameLayout;
 import android.provider.Settings;
-import android.support.v7.preference.ListPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceChangeListener;
-import android.support.v7.preference.PreferenceCategory;
+import androidx.preference.ListPreference;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceChangeListener;
+import androidx.preference.PreferenceCategory;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.View.OnLayoutChangeListener;
@@ -158,6 +158,8 @@ public class CaptionPropertiesFragment extends SettingsPreferenceFragment
         final boolean enabled = mCaptioningManager.isEnabled();
         SettingsActivity activity = (SettingsActivity) getActivity();
         mSwitchBar = activity.getSwitchBar();
+        mSwitchBar.setSwitchBarText(R.string.accessibility_caption_master_switch_title,
+                R.string.accessibility_caption_master_switch_title);
         mSwitchBar.setCheckedInternal(enabled);
         mToggleSwitch = mSwitchBar.getSwitch();
 

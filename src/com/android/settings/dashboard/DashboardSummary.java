@@ -17,12 +17,14 @@
 package com.android.settings.dashboard;
 
 import android.app.Activity;
+import android.app.LoaderManager;
 import android.content.Context;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.widget.LinearLayoutManager;
+import android.service.settings.suggestions.Suggestion;
+import androidx.annotation.VisibleForTesting;
+import androidx.annotation.WorkerThread;
+import androidx.recyclerview.widget.LinearLayoutManager;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -32,33 +34,32 @@ import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.core.InstrumentedFragment;
 import com.android.settings.dashboard.conditional.Condition;
-import com.android.settings.dashboard.conditional.ConditionAdapterUtils;
 import com.android.settings.dashboard.conditional.ConditionManager;
+import com.android.settings.dashboard.conditional.ConditionManager.ConditionListener;
 import com.android.settings.dashboard.conditional.FocusRecyclerView;
-import com.android.settings.dashboard.suggestions.SuggestionDismissController;
+import com.android.settings.dashboard.conditional.FocusRecyclerView.FocusListener;
 import com.android.settings.dashboard.suggestions.SuggestionFeatureProvider;
-import com.android.settings.dashboard.suggestions.SuggestionsChecks;
 import com.android.settings.overlay.FeatureFactory;
-import com.android.settingslib.SuggestionParser;
+import com.android.settings.widget.ActionBarShadowController;
 import com.android.settingslib.drawer.CategoryKey;
 import com.android.settingslib.drawer.DashboardCategory;
 import com.android.settingslib.drawer.SettingsDrawerActivity;
-import com.android.settingslib.drawer.Tile;
+import com.android.settingslib.drawer.SettingsDrawerActivity.CategoryListener;
+import com.android.settingslib.suggestions.SuggestionControllerMixin;
+import com.android.settingslib.utils.ThreadUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class DashboardSummary extends InstrumentedFragment
-        implements SettingsDrawerActivity.CategoryListener, ConditionManager.ConditionListener,
-        FocusRecyclerView.FocusListener {
+        implements CategoryListener, ConditionListener,
+        FocusListener, SuggestionControllerMixin.SuggestionControllerHost {
     public static final boolean DEBUG = false;
     private static final boolean DEBUG_TIMING = false;
-    private static final int MAX_WAIT_MILLIS = 700;
+    private static final int MAX_WAIT_MILLIS = 3000;
     private static final String TAG = "DashboardSummary";
 
-    private static final String SUGGESTIONS = "suggestions";
-
-    private static final String EXTRA_SCROLL_POSITION = "scroll_position";
+    private static final String STATE_SCROLL_POSITION = "scroll_position";
+    private static final String STATE_CATEGORIES_CHANGE_CALLED = "categories_change_called";
 
     private final Handler mHandler = new Handler();
 
@@ -66,13 +67,15 @@ public class DashboardSummary extends InstrumentedFragment
     private DashboardAdapter mAdapter;
     private SummaryLoader mSummaryLoader;
     private ConditionManager mConditionManager;
-    private SuggestionParser mSuggestionParser;
     private LinearLayoutManager mLayoutManager;
-    private SuggestionsChecks mSuggestionsChecks;
+    private SuggestionControllerMixin mSuggestionControllerMixin;
     private DashboardFeatureProvider mDashboardFeatureProvider;
-    private SuggestionFeatureProvider mSuggestionFeatureProvider;
-    private boolean isOnCategoriesChangedCalled;
-    private SuggestionDismissController mSuggestionDismissHandler;
+    @VisibleForTesting
+    boolean mIsOnCategoriesChangedCalled;
+    private boolean mOnConditionsChangedCalled;
+
+    private DashboardCategory mStagingCategory;
+    private List<Suggestion> mStagingSuggestions;
 
     @Override
     public int getMetricsCategory() {
@@ -80,25 +83,46 @@ public class DashboardSummary extends InstrumentedFragment
     }
 
     @Override
+    public void onAttach(Context context) {
+        super.onAttach(context);
+        Log.d(TAG, "Creating SuggestionControllerMixin");
+        final SuggestionFeatureProvider suggestionFeatureProvider = FeatureFactory
+                .getFactory(context)
+                .getSuggestionFeatureProvider(context);
+        if (suggestionFeatureProvider.isSuggestionEnabled(context)) {
+            mSuggestionControllerMixin = new SuggestionControllerMixin(context, this /* host */,
+                    getLifecycle(), suggestionFeatureProvider
+                    .getSuggestionServiceComponent());
+        }
+    }
+
+    @Override
+    public LoaderManager getLoaderManager() {
+        if (!isAdded()) {
+            return null;
+        }
+        return super.getLoaderManager();
+    }
+
+    @Override
     public void onCreate(Bundle savedInstanceState) {
         long startTime = System.currentTimeMillis();
         super.onCreate(savedInstanceState);
+        Log.d(TAG, "Starting DashboardSummary");
         final Activity activity = getActivity();
         mDashboardFeatureProvider = FeatureFactory.getFactory(activity)
                 .getDashboardFeatureProvider(activity);
-        mSuggestionFeatureProvider = FeatureFactory.getFactory(activity)
-                .getSuggestionFeatureProvider(activity);
 
         mSummaryLoader = new SummaryLoader(activity, CategoryKey.CATEGORY_HOMEPAGE);
 
         mConditionManager = ConditionManager.get(activity, false);
         getLifecycle().addObserver(mConditionManager);
-        mSuggestionParser = new SuggestionParser(activity,
-                activity.getSharedPreferences(SUGGESTIONS, 0), R.xml.suggestion_ordering);
-        mSuggestionsChecks = new SuggestionsChecks(getContext());
+        if (savedInstanceState != null) {
+            mIsOnCategoriesChangedCalled =
+                    savedInstanceState.getBoolean(STATE_CATEGORIES_CHANGE_CALLED);
+        }
         if (DEBUG_TIMING) {
-            Log.d(TAG, "onCreate took " + (System.currentTimeMillis() - startTime)
-                    + " ms");
+            Log.d(TAG, "onCreate took " + (System.currentTimeMillis() - startTime) + " ms");
         }
     }
 
@@ -138,9 +162,6 @@ public class DashboardSummary extends InstrumentedFragment
                 mMetricsFeatureProvider.hidden(getContext(), c.getMetricsConstant());
             }
         }
-        if (!getActivity().isChangingConfigurations()) {
-            mAdapter.onPause();
-        }
     }
 
     @Override
@@ -162,57 +183,47 @@ public class DashboardSummary extends InstrumentedFragment
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
-            Bundle savedInstanceState) {
-        return inflater.inflate(R.layout.dashboard, container, false);
-    }
-
-    @Override
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
-        if (mLayoutManager == null) return;
-        outState.putInt(EXTRA_SCROLL_POSITION, mLayoutManager.findFirstVisibleItemPosition());
-        if (mAdapter != null) {
-            mAdapter.onSaveInstanceState(outState);
+        if (mLayoutManager == null) {
+            return;
         }
+        outState.putBoolean(STATE_CATEGORIES_CHANGE_CALLED, mIsOnCategoriesChangedCalled);
+        outState.putInt(STATE_SCROLL_POSITION, mLayoutManager.findFirstVisibleItemPosition());
     }
 
     @Override
-    public void onViewCreated(View view, Bundle bundle) {
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle bundle) {
         long startTime = System.currentTimeMillis();
-        mDashboard = view.findViewById(R.id.dashboard_container);
+        final View root = inflater.inflate(R.layout.dashboard, container, false);
+        mDashboard = root.findViewById(R.id.dashboard_container);
         mLayoutManager = new LinearLayoutManager(getContext());
         mLayoutManager.setOrientation(LinearLayoutManager.VERTICAL);
         if (bundle != null) {
-            int scrollPosition = bundle.getInt(EXTRA_SCROLL_POSITION);
+            int scrollPosition = bundle.getInt(STATE_SCROLL_POSITION);
             mLayoutManager.scrollToPosition(scrollPosition);
         }
         mDashboard.setLayoutManager(mLayoutManager);
         mDashboard.setHasFixedSize(true);
-        mDashboard.addItemDecoration(new DashboardDecorator(getContext()));
         mDashboard.setListener(this);
-        Log.d(TAG, "adapter created");
-        mAdapter = new DashboardAdapter(getContext(), bundle, mConditionManager.getConditions());
-        mDashboard.setAdapter(mAdapter);
-        mSuggestionDismissHandler = new SuggestionDismissController(
-                getContext(), mDashboard, mSuggestionParser, mAdapter);
         mDashboard.setItemAnimator(new DashboardItemAnimator());
+        mAdapter = new DashboardAdapter(getContext(), bundle,
+                mConditionManager.getConditions(), mSuggestionControllerMixin, getLifecycle());
+        mDashboard.setAdapter(mAdapter);
         mSummaryLoader.setSummaryConsumer(mAdapter);
-        ConditionAdapterUtils.addDismiss(mDashboard);
+        ActionBarShadowController.attachToRecyclerView(
+                getActivity().findViewById(R.id.search_bar_container), getLifecycle(), mDashboard);
+        rebuildUI();
         if (DEBUG_TIMING) {
-            Log.d(TAG, "onViewCreated took "
+            Log.d(TAG, "onCreateView took "
                     + (System.currentTimeMillis() - startTime) + " ms");
         }
-        rebuildUI();
+        return root;
     }
 
     @VisibleForTesting
     void rebuildUI() {
-        new SuggestionLoader().execute();
-        // Set categories on their own if loading suggestions takes too long.
-        mHandler.postDelayed(() -> {
-            updateCategoryAndSuggestion(null /* tiles */);
-        }, MAX_WAIT_MILLIS);
+        ThreadUtils.postOnBackgroundThread(() -> updateCategory());
     }
 
     @Override
@@ -220,73 +231,65 @@ public class DashboardSummary extends InstrumentedFragment
         // Bypass rebuildUI() on the first call of onCategoriesChanged, since rebuildUI() happens
         // in onViewCreated as well when app starts. But, on the subsequent calls we need to
         // rebuildUI() because there might be some changes to suggestions and categories.
-        if (isOnCategoriesChangedCalled) {
+        if (mIsOnCategoriesChangedCalled) {
             rebuildUI();
         }
-        isOnCategoriesChangedCalled = true;
+        mIsOnCategoriesChangedCalled = true;
     }
 
     @Override
     public void onConditionsChanged() {
         Log.d(TAG, "onConditionsChanged");
-        final boolean scrollToTop = mLayoutManager.findFirstCompletelyVisibleItemPosition() <= 1;
-        mAdapter.setConditions(mConditionManager.getConditions());
-        if (scrollToTop) {
-            mDashboard.scrollToPosition(0);
+        // Bypass refreshing the conditions on the first call of onConditionsChanged.
+        // onConditionsChanged is called immediately everytime we start listening to the conditions
+        // change when we gain window focus. Since the conditions are passed to the adapter's
+        // constructor when we create the view, the first handling is not necessary.
+        // But, on the subsequent calls we need to handle it because there might be real changes to
+        // conditions.
+        if (mOnConditionsChangedCalled) {
+            final boolean scrollToTop =
+                    mLayoutManager.findFirstCompletelyVisibleItemPosition() <= 1;
+            mAdapter.setConditions(mConditionManager.getConditions());
+            if (scrollToTop) {
+                mDashboard.scrollToPosition(0);
+            }
+        } else {
+            mOnConditionsChangedCalled = true;
         }
     }
 
-    private class SuggestionLoader extends AsyncTask<Void, Void, List<Tile>> {
-        @Override
-        protected List<Tile> doInBackground(Void... params) {
-            final Context context = getContext();
-            boolean isSmartSuggestionEnabled =
-                    mSuggestionFeatureProvider.isSmartSuggestionEnabled(context);
-            List<Tile> suggestions = mSuggestionParser.getSuggestions(isSmartSuggestionEnabled);
-            if (isSmartSuggestionEnabled) {
-                List<String> suggestionIds = new ArrayList<>(suggestions.size());
-                for (Tile suggestion : suggestions) {
-                    suggestionIds.add(mSuggestionFeatureProvider.getSuggestionIdentifier(
-                            context, suggestion));
-                }
-                // TODO: create a Suggestion class to maintain the id and other info
-                mSuggestionFeatureProvider.rankSuggestions(suggestions, suggestionIds);
-            }
-            for (int i = 0; i < suggestions.size(); i++) {
-                Tile suggestion = suggestions.get(i);
-                if (mSuggestionsChecks.isSuggestionComplete(suggestion)) {
-                    mSuggestionFeatureProvider.dismissSuggestion(
-                            context, mSuggestionParser, suggestion);
-                    suggestions.remove(i--);
-                }
-            }
-            return suggestions;
-        }
-
-        @Override
-        protected void onPostExecute(List<Tile> tiles) {
-            // tell handler that suggestions were loaded quickly enough
+    @Override
+    public void onSuggestionReady(List<Suggestion> suggestions) {
+        mStagingSuggestions = suggestions;
+        mAdapter.setSuggestions(suggestions);
+        if (mStagingCategory != null) {
+            Log.d(TAG, "Category has loaded, setting category from suggestionReady");
             mHandler.removeCallbacksAndMessages(null);
-            updateCategoryAndSuggestion(tiles);
+            mAdapter.setCategory(mStagingCategory);
         }
     }
 
-    @VisibleForTesting
-    void updateCategoryAndSuggestion(List<Tile> suggestions) {
-        final Activity activity = getActivity();
-        if (activity == null) {
+    @WorkerThread
+    void updateCategory() {
+        final DashboardCategory category = mDashboardFeatureProvider.getTilesForCategory(
+                CategoryKey.CATEGORY_HOMEPAGE);
+        mSummaryLoader.updateSummaryToCache(category);
+        mStagingCategory = category;
+        if (mSuggestionControllerMixin == null) {
+            ThreadUtils.postOnMainThread(() -> mAdapter.setCategory(mStagingCategory));
             return;
         }
-
-        // Temporary hack to wrap homepage category into a list. Soon we will create adapter
-        // API that takes a single category.
-        List<DashboardCategory> categories = new ArrayList<>();
-        categories.add(mDashboardFeatureProvider.getTilesForCategory(
-                CategoryKey.CATEGORY_HOMEPAGE));
-        if (suggestions != null) {
-            mAdapter.setCategoriesAndSuggestions(categories, suggestions);
+        if (mSuggestionControllerMixin.isSuggestionLoaded()) {
+            Log.d(TAG, "Suggestion has loaded, setting suggestion/category");
+            ThreadUtils.postOnMainThread(() -> {
+                if (mStagingSuggestions != null) {
+                    mAdapter.setSuggestions(mStagingSuggestions);
+                }
+                mAdapter.setCategory(mStagingCategory);
+            });
         } else {
-            mAdapter.setCategory(categories);
+            Log.d(TAG, "Suggestion NOT loaded, delaying setCategory by " + MAX_WAIT_MILLIS + "ms");
+            mHandler.postDelayed(() -> mAdapter.setCategory(mStagingCategory), MAX_WAIT_MILLIS);
         }
     }
 }

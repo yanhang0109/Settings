@@ -16,29 +16,8 @@
 
 package com.android.settings;
 
-import android.app.Activity;
-import android.app.ActivityManager;
-import android.app.FragmentManager;
-import android.app.FragmentTransaction;
-import android.content.Context;
-import android.content.Intent;
-import android.graphics.Bitmap;
-
-import android.os.Bundle;
-import android.view.Menu;
-import com.android.settings.testutils.FakeFeatureFactory;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Answers;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.robolectric.RuntimeEnvironment;
-import org.robolectric.annotation.Config;
-import org.robolectric.util.ReflectionHelpers;
-
 import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -46,12 +25,31 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
-public class SettingsActivityTest {
+import android.app.ActivityManager;
+import android.app.FragmentManager;
+import android.app.FragmentTransaction;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.os.Bundle;
+import android.provider.Settings.Global;
+import android.view.View;
 
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
-    private Context mContext;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settings.testutils.shadow.SettingsShadowResources;
+import com.android.settings.testutils.shadow.SettingsShadowResourcesImpl;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.robolectric.Robolectric;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+
+@RunWith(SettingsRobolectricTestRunner.class)
+public class SettingsActivityTest {
 
     @Mock
     private FragmentManager mFragmentManager;
@@ -60,23 +58,48 @@ public class SettingsActivityTest {
     @Mock
     private Bitmap mBitmap;
     private SettingsActivity mActivity;
-
-    private FakeFeatureFactory mFeatureFactory;
+    private Context mContext;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
 
-        FakeFeatureFactory.setupForTest(mContext);
-        mFeatureFactory = (FakeFeatureFactory) FakeFeatureFactory.getFactory(mContext);
-
+        mContext = RuntimeEnvironment.application;
         mActivity = spy(new SettingsActivity());
         doReturn(mBitmap).when(mActivity).getBitmapFromXmlResource(anyInt());
     }
 
     @Test
-    public void launchSettingFragment_nullExtraShowFragment_shouldNotCrash()
-            throws ClassNotFoundException {
+    @Config(shadows = {
+        SettingsShadowResourcesImpl.class,
+        SettingsShadowResources.SettingsShadowTheme.class,
+    })
+    public void onCreate_deviceNotProvisioned_shouldDisableSearch() {
+        Global.putInt(mContext.getContentResolver(), Global.DEVICE_PROVISIONED, 0);
+        final Intent intent = new Intent(mContext, Settings.class);
+        final SettingsActivity activity =
+            Robolectric.buildActivity(SettingsActivity.class, intent).create(Bundle.EMPTY).get();
+
+        assertThat(activity.findViewById(R.id.search_bar).getVisibility())
+            .isEqualTo(View.INVISIBLE);
+    }
+
+    @Test
+    @Config(shadows = {
+        SettingsShadowResourcesImpl.class,
+        SettingsShadowResources.SettingsShadowTheme.class,
+    })
+    public void onCreate_deviceProvisioned_shouldEnableSearch() {
+        Global.putInt(mContext.getContentResolver(), Global.DEVICE_PROVISIONED, 1);
+        final Intent intent = new Intent(mContext, Settings.class);
+        final SettingsActivity activity =
+            Robolectric.buildActivity(SettingsActivity.class, intent).create(Bundle.EMPTY).get();
+
+        assertThat(activity.findViewById(R.id.search_bar).getVisibility()).isEqualTo(View.VISIBLE);
+    }
+
+    @Test
+    public void launchSettingFragment_nullExtraShowFragment_shouldNotCrash() {
         when(mActivity.getFragmentManager()).thenReturn(mFragmentManager);
         when(mFragmentManager.beginTransaction()).thenReturn(mock(FragmentTransaction.class));
 
@@ -89,53 +112,6 @@ public class SettingsActivityTest {
     public void testSetTaskDescription_IconChanged() {
         mActivity.setTaskDescription(mTaskDescription);
 
-        verify(mTaskDescription).setIcon(any());
-    }
-
-    @Test
-    public void testCreateOptionsMenu_setsUpSearch() {
-        ReflectionHelpers.setField(mActivity, "mSearchFeatureProvider",
-                mFeatureFactory.getSearchFeatureProvider());
-        mActivity.mDisplaySearch = true;
-        mActivity.onCreateOptionsMenu(null);
-
-        verify(mFeatureFactory.getSearchFeatureProvider()).setUpSearchMenu(any(Menu.class),
-                any(Activity.class));
-    }
-
-    @Test
-    public void testSaveState_DisplaySearchSaved() {
-        mActivity.mDisplaySearch = true;
-        Bundle bundle = new Bundle();
-        mActivity.saveState(bundle);
-
-        assertThat((boolean) bundle.get(SettingsActivity.SAVE_KEY_SHOW_SEARCH)).isTrue();
-    }
-
-    @Test
-    public void testSaveState_EnabledHomeSaved() {
-        mActivity.mDisplayHomeAsUpEnabled = true;
-        Bundle bundle = new Bundle();
-        mActivity.saveState(bundle);
-
-        assertThat((boolean) bundle.get(SettingsActivity.SAVE_KEY_SHOW_HOME_AS_UP)).isTrue();
-    }
-
-    @Test
-    public void testRestoreState_DisplaySearchRestored() {
-        Bundle bundle = new Bundle();
-        bundle.putBoolean(SettingsActivity.SAVE_KEY_SHOW_SEARCH, true);
-        mActivity.onRestoreInstanceState(bundle);
-
-        assertThat(mActivity.mDisplaySearch).isTrue();
-    }
-
-    @Test
-    public void testRestoreState_EnabledHomeRestored() {
-        Bundle bundle = new Bundle();
-        bundle.putBoolean(SettingsActivity.SAVE_KEY_SHOW_SEARCH, true);
-        mActivity.onRestoreInstanceState(bundle);
-
-        assertThat(mActivity.mDisplaySearch).isTrue();
+        verify(mTaskDescription).setIcon(nullable(Bitmap.class));
     }
 }

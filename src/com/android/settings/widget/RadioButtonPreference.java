@@ -17,10 +17,12 @@
 package com.android.settings.widget;
 
 import android.content.Context;
-import android.support.v4.content.res.TypedArrayUtils;
-import android.support.v7.preference.CheckBoxPreference;
-import android.support.v7.preference.PreferenceViewHolder;
+import androidx.core.content.res.TypedArrayUtils;
+import androidx.preference.CheckBoxPreference;
+import androidx.preference.PreferenceViewHolder;
+import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.view.View;
 import android.widget.TextView;
 
 import com.android.settings.R;
@@ -45,11 +47,13 @@ public class RadioButtonPreference extends CheckBoxPreference {
     public RadioButtonPreference(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
         setWidgetLayoutResource(R.layout.preference_widget_radiobutton);
+        setLayoutResource(R.layout.preference_radio);
+        setIconSpaceReserved(false);
     }
 
     public RadioButtonPreference(Context context, AttributeSet attrs) {
         this(context, attrs, TypedArrayUtils.getAttr(context,
-                android.support.v7.preference.R.attr.preferenceStyle,
+                androidx.preference.R.attr.preferenceStyle,
                 android.R.attr.preferenceStyle));
     }
 
@@ -71,6 +75,12 @@ public class RadioButtonPreference extends CheckBoxPreference {
     @Override
     public void onBindViewHolder(PreferenceViewHolder view) {
         super.onBindViewHolder(view);
+
+        View summaryContainer = view.findViewById(R.id.summary_container);
+        if (summaryContainer != null) {
+            summaryContainer.setVisibility(
+                TextUtils.isEmpty(getSummary()) ? View.GONE : View.VISIBLE);
+        }
 
         TextView title = (TextView) view.findViewById(android.R.id.title);
         if (title != null) {

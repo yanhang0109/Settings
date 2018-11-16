@@ -16,22 +16,22 @@
 
 package com.android.settings;
 
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class PrivacySettingsTest {
 
     @Mock
@@ -56,5 +56,4 @@ public class PrivacySettingsTest {
     public void testSetPreference_noCrash() {
         mSettings.setPreferenceReferences(mScreen);
     }
-
 }

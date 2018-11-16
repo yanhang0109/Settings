@@ -15,40 +15,6 @@
  */
 package com.android.settings.accounts;
 
-import android.accounts.Account;
-import android.accounts.AccountManager;
-import android.accounts.AuthenticatorDescription;
-import android.content.Context;
-import android.content.pm.UserInfo;
-import android.os.UserHandle;
-import android.os.UserManager;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceGroup;
-import android.support.v7.preference.PreferenceManager;
-import android.support.v7.preference.PreferenceScreen;
-import android.text.TextUtils;
-
-import com.android.settings.AccessiblePreferenceCategory;
-import com.android.settings.R;
-import com.android.settings.SettingsPreferenceFragment;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.search.SearchIndexableRaw;
-import com.android.settings.testutils.shadow.ShadowAccountManager;
-import com.android.settings.testutils.shadow.ShadowContentResolver;
-
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.ArgumentMatcher;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
-
-import java.util.ArrayList;
-import java.util.List;
-
 import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.Matchers.any;
@@ -62,9 +28,47 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.accounts.Account;
+import android.accounts.AccountManager;
+import android.accounts.AuthenticatorDescription;
+import android.content.Context;
+import android.content.pm.UserInfo;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.os.UserHandle;
+import android.os.UserManager;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceGroup;
+import androidx.preference.PreferenceManager;
+import androidx.preference.PreferenceScreen;
+import android.text.TextUtils;
+
+import com.android.settings.AccessiblePreferenceCategory;
+import com.android.settings.R;
+import com.android.settings.SettingsPreferenceFragment;
+import com.android.settings.search.SearchIndexableRaw;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settings.testutils.shadow.ShadowAccountManager;
+import com.android.settings.testutils.shadow.ShadowContentResolver;
+import com.android.settingslib.accounts.AuthenticatorHelper;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.ArgumentMatcher;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
+import org.robolectric.shadows.ShadowApplication;
+
+import java.util.ArrayList;
+import java.util.List;
+
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION,
-        shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
+@Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
 public class AccountPreferenceControllerTest {
 
     @Mock(answer = RETURNS_DEEP_STUBS)
@@ -84,15 +88,15 @@ public class AccountPreferenceControllerTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        ShadowApplication shadowContext = ShadowApplication.getInstance();
-        shadowContext.setSystemService(Context.USER_SERVICE, mUserManager);
-        shadowContext.setSystemService(Context.ACCOUNT_SERVICE, mAccountManager);
-        mContext = shadowContext.getApplicationContext();
+        mContext = RuntimeEnvironment.application;
+        final ShadowApplication shadowApp = ShadowApplication.getInstance();
+        shadowApp.setSystemService(Context.USER_SERVICE, mUserManager);
+        shadowApp.setSystemService(Context.ACCOUNT_SERVICE, mAccountManager);
 
         when(mFragment.getPreferenceScreen()).thenReturn(mScreen);
         when(mFragment.getPreferenceManager().getContext()).thenReturn(mContext);
-        when(mAccountManager.getAuthenticatorTypesAsUser(anyInt())).thenReturn(
-                new AuthenticatorDescription[0]);
+        when(mAccountManager.getAuthenticatorTypesAsUser(anyInt()))
+            .thenReturn(new AuthenticatorDescription[0]);
         when(mAccountManager.getAccountsAsUser(anyInt())).thenReturn(new Account[0]);
         mController = new AccountPreferenceController(mContext, mFragment, null, mAccountHelper);
     }
@@ -106,11 +110,10 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_linkedUser_shouldAddOneAccountCategory() {
         final UserInfo info = new UserInfo(1, "user 1", 0);
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(true);
+        when(mUserManager.isRestrictedProfile()).thenReturn(true);
         when(mUserManager.getUserInfo(anyInt())).thenReturn(info);
 
         mController.onResume();
@@ -119,12 +122,11 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_oneProfile_shouldAddOneAccountCategory() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
 
         mController.onResume();
@@ -133,13 +135,12 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_twoProfiles_shouldAddTwoAccountCategory() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         infos.add(new UserInfo(2, "user 2", UserInfo.FLAG_MANAGED_PROFILE));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
 
         mController.onResume();
@@ -148,13 +149,12 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_noProfileChange_shouldNotAddOrRemoveAccountCategory() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         infos.add(new UserInfo(2, "user 2", UserInfo.FLAG_MANAGED_PROFILE));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         // First time resume will build the UI
         mController.onResume();
@@ -166,12 +166,11 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_oneNewProfile_shouldAddOneAccountCategory() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         // First time resume will build the UI
         mController.onResume();
@@ -184,13 +183,12 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_oneProfileRemoved_shouldRemoveOneAccountCategory() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         infos.add(new UserInfo(2, "user 2", UserInfo.FLAG_MANAGED_PROFILE));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         // First time resume will build the UI
         mController.onResume();
@@ -202,31 +200,29 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_oneProfile_shouldSetAccountTitleWithUserName() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", UserInfo.FLAG_MANAGED_PROFILE));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         AccessiblePreferenceCategory preferenceGroup = mock(AccessiblePreferenceCategory.class);
         when(mAccountHelper.createAccessiblePreferenceCategory(any(Context.class))).thenReturn(
-            preferenceGroup);
+                preferenceGroup);
 
         mController.onResume();
 
         verify(preferenceGroup).setTitle(
-            mContext.getString(R.string.account_for_section_header, "user 1"));
+                mContext.getString(R.string.account_for_section_header, "user 1"));
 
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_noPreferenceScreen_shouldNotCrash() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
 
         AccessiblePreferenceCategory preferenceGroup = mock(AccessiblePreferenceCategory.class);
@@ -239,13 +235,12 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_noPreferenceManager_shouldNotCrash() {
         when(mFragment.getPreferenceManager()).thenReturn(null);
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         mController.onResume();
 
@@ -309,7 +304,7 @@ public class AccountPreferenceControllerTest {
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         when(mAccountHelper.hasBaseUserRestriction(
                 eq(UserManager.DISALLOW_REMOVE_MANAGED_PROFILE), anyInt()))
-            .thenReturn(true);
+                .thenReturn(true);
 
         mController.updateRawDataToIndex(data);
 
@@ -324,7 +319,7 @@ public class AccountPreferenceControllerTest {
         when(mUserManager.isManagedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         when(mAccountHelper.hasBaseUserRestriction(
-            eq(UserManager.DISALLOW_MODIFY_ACCOUNTS), anyInt())).thenReturn(true);
+                eq(UserManager.DISALLOW_MODIFY_ACCOUNTS), anyInt())).thenReturn(true);
 
         mController.updateRawDataToIndex(data);
 
@@ -332,12 +327,11 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_twoAccountsOfSameType_shouldAddThreePreferences() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         Account[] accounts = {new Account("Account1", "com.acct1")};
         when(mAccountManager.getAccountsAsUser(anyInt())).thenReturn(accounts);
@@ -346,18 +340,18 @@ public class AccountPreferenceControllerTest {
         accountType1[0] = new Account("Account11", "com.acct1");
         accountType1[1] = new Account("Account12", "com.acct1");
         when(mAccountManager.getAccountsByTypeAsUser(eq("com.acct1"), any(UserHandle.class)))
-            .thenReturn(accountType1);
+                .thenReturn(accountType1);
 
         AuthenticatorDescription[] authDescs = {
-            new AuthenticatorDescription("com.acct1", "com.android.settings",
-                R.string.account_settings_title, 0, 0, 0, false)
+                new AuthenticatorDescription("com.acct1", "com.android.settings",
+                        R.string.account_settings_title, 0, 0, 0, false)
         };
         when(mAccountManager.getAuthenticatorTypesAsUser(anyInt())).thenReturn(authDescs);
 
         AccessiblePreferenceCategory preferenceGroup = mock(AccessiblePreferenceCategory.class);
         when(preferenceGroup.getPreferenceManager()).thenReturn(mock(PreferenceManager.class));
         when(mAccountHelper.createAccessiblePreferenceCategory(any(Context.class))).thenReturn(
-            preferenceGroup);
+                preferenceGroup);
 
         mController.onResume();
 
@@ -366,12 +360,13 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
+    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class,
+            ShadowAuthenticatorHelper.class})
     public void onResume_twoAccountsOfSameName_shouldAddFivePreferences() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
 
         final Account[] accountType1 = new Account[2];
@@ -411,12 +406,11 @@ public class AccountPreferenceControllerTest {
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_noAccountChange_shouldNotAddAccountPreference() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         Account[] accounts = {new Account("Acct1", "com.acct1")};
         when(mAccountManager.getAccountsAsUser(anyInt())).thenReturn(accounts);
@@ -425,25 +419,25 @@ public class AccountPreferenceControllerTest {
         accountType1[0] = new Account("Acct11", "com.acct1");
         accountType1[1] = new Account("Acct12", "com.acct1");
         when(mAccountManager.getAccountsByTypeAsUser(eq("com.acct1"), any(UserHandle.class)))
-            .thenReturn(accountType1);
+                .thenReturn(accountType1);
 
         AuthenticatorDescription[] authDescs = {
-            new AuthenticatorDescription("com.acct1", "com.android.settings",
-                R.string.account_settings_title, 0, 0, 0, false)
+                new AuthenticatorDescription("com.acct1", "com.android.settings",
+                        R.string.account_settings_title, 0, 0, 0, false)
         };
         when(mAccountManager.getAuthenticatorTypesAsUser(anyInt())).thenReturn(authDescs);
 
         AccessiblePreferenceCategory preferenceGroup = mock(AccessiblePreferenceCategory.class);
         when(preferenceGroup.getPreferenceManager()).thenReturn(mock(PreferenceManager.class));
         when(mAccountHelper.createAccessiblePreferenceCategory(any(Context.class))).thenReturn(
-            preferenceGroup);
+                preferenceGroup);
         mController.onResume();
 
         mController.onResume();
 
         // each account should be added only once
-        verify(preferenceGroup).addPreference(argThat(new PreferenceMatcher("Acct11")));
-        verify(preferenceGroup).addPreference(argThat(new PreferenceMatcher("Acct12")));
+        verify(preferenceGroup).addPreference(argThat(titleMatches("Acct11")));
+        verify(preferenceGroup).addPreference(argThat(titleMatches("Acct12")));
     }
 
     @Test
@@ -451,7 +445,7 @@ public class AccountPreferenceControllerTest {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         Account[] accounts = {new Account("Acct1", "com.acct1")};
         when(mAccountManager.getAccountsAsUser(anyInt())).thenReturn(accounts);
@@ -460,18 +454,18 @@ public class AccountPreferenceControllerTest {
         accountType1[0] = new Account("Acct11", "com.acct1");
         accountType1[1] = new Account("Acct12", "com.acct1");
         when(mAccountManager.getAccountsByTypeAsUser(eq("com.acct1"), any(UserHandle.class)))
-            .thenReturn(accountType1);
+                .thenReturn(accountType1);
 
         AuthenticatorDescription[] authDescs = {
-            new AuthenticatorDescription("com.acct1", "com.android.settings",
-                R.string.account_settings_title, 0, 0, 0, false)
+                new AuthenticatorDescription("com.acct1", "com.android.settings",
+                        R.string.account_settings_title, 0, 0, 0, false)
         };
         when(mAccountManager.getAuthenticatorTypesAsUser(anyInt())).thenReturn(authDescs);
 
         AccessiblePreferenceCategory preferenceGroup = mock(AccessiblePreferenceCategory.class);
         when(preferenceGroup.getPreferenceManager()).thenReturn(mock(PreferenceManager.class));
         when(mAccountHelper.createAccessiblePreferenceCategory(any(Context.class))).thenReturn(
-            preferenceGroup);
+                preferenceGroup);
 
         mController.onResume();
 
@@ -481,30 +475,29 @@ public class AccountPreferenceControllerTest {
         accountType1[1] = new Account("Acct12", "com.acct1");
         accountType1[2] = new Account("Acct13", "com.acct1");
         when(mAccountManager.getAccountsByTypeAsUser(eq("com.acct1"), any(UserHandle.class)))
-            .thenReturn(accountType1);
+                .thenReturn(accountType1);
 
         mController.onResume();
 
         // each account should be added only once
-        verify(preferenceGroup, times(1)).addPreference(argThat(new PreferenceMatcher("Acct11")));
-        verify(preferenceGroup, times(1)).addPreference(argThat(new PreferenceMatcher("Acct12")));
-        verify(preferenceGroup, times(1)).addPreference(argThat(new PreferenceMatcher("Acct13")));
+        verify(preferenceGroup, times(1)).addPreference(argThat(titleMatches("Acct11")));
+        verify(preferenceGroup, times(1)).addPreference(argThat(titleMatches("Acct12")));
+        verify(preferenceGroup, times(1)).addPreference(argThat(titleMatches("Acct13")));
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_oneNewAccountType_shouldAddOneAccountPreference() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         infos.add(new UserInfo(2, "user 2", UserInfo.FLAG_MANAGED_PROFILE));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
 
         AccessiblePreferenceCategory preferenceGroup = mock(AccessiblePreferenceCategory.class);
         when(preferenceGroup.getPreferenceManager()).thenReturn(mock(PreferenceManager.class));
         when(mAccountHelper.createAccessiblePreferenceCategory(any(Context.class))).thenReturn(
-            preferenceGroup);
+                preferenceGroup);
 
         // First time resume will build the UI with no account
         mController.onResume();
@@ -513,27 +506,26 @@ public class AccountPreferenceControllerTest {
         Account[] accounts = {new Account("Acct1", "com.acct1")};
         when(mAccountManager.getAccountsAsUser(2)).thenReturn(accounts);
         when(mAccountManager.getAccountsByTypeAsUser(eq("com.acct1"), any(UserHandle.class)))
-            .thenReturn(accounts);
+                .thenReturn(accounts);
 
         AuthenticatorDescription[] authDescs = {
-            new AuthenticatorDescription("com.acct1", "com.android.settings",
-                R.string.account_settings_title, 0, 0, 0, false)
+                new AuthenticatorDescription("com.acct1", "com.android.settings",
+                        R.string.account_settings_title, 0, 0, 0, false)
         };
         when(mAccountManager.getAuthenticatorTypesAsUser(anyInt())).thenReturn(authDescs);
 
         // Resume should show the newly added account
         mController.onResume();
 
-        verify(preferenceGroup).addPreference(argThat(new PreferenceMatcher("Acct1")));
+        verify(preferenceGroup).addPreference(argThat(titleMatches("Acct1")));
     }
 
     @Test
-    @Config(shadows = {ShadowAccountManager.class, ShadowContentResolver.class})
     public void onResume_oneAccountRemoved_shouldRemoveOneAccountPreference() {
         final List<UserInfo> infos = new ArrayList<>();
         infos.add(new UserInfo(1, "user 1", 0));
         when(mUserManager.isManagedProfile()).thenReturn(false);
-        when(mUserManager.isLinkedUser()).thenReturn(false);
+        when(mUserManager.isRestrictedProfile()).thenReturn(false);
         when(mUserManager.getProfiles(anyInt())).thenReturn(infos);
         Account[] accounts = {new Account("Acct1", "com.acct1")};
         when(mAccountManager.getAccountsAsUser(anyInt())).thenReturn(accounts);
@@ -542,18 +534,18 @@ public class AccountPreferenceControllerTest {
         accountType1[0] = new Account("Acct11", "com.acct1");
         accountType1[1] = new Account("Acct12", "com.acct1");
         when(mAccountManager.getAccountsByTypeAsUser(eq("com.acct1"), any(UserHandle.class)))
-            .thenReturn(accountType1);
+                .thenReturn(accountType1);
 
         AuthenticatorDescription[] authDescs = {
-            new AuthenticatorDescription("com.acct1", "com.android.settings",
-                R.string.account_settings_title, 0, 0, 0, false)
+                new AuthenticatorDescription("com.acct1", "com.android.settings",
+                        R.string.account_settings_title, 0, 0, 0, false)
         };
         when(mAccountManager.getAuthenticatorTypesAsUser(anyInt())).thenReturn(authDescs);
 
         AccessiblePreferenceCategory preferenceGroup = mock(AccessiblePreferenceCategory.class);
         when(preferenceGroup.getPreferenceManager()).thenReturn(mock(PreferenceManager.class));
         when(mAccountHelper.createAccessiblePreferenceCategory(any(Context.class))).thenReturn(
-            preferenceGroup);
+                preferenceGroup);
 
         mController.onResume();
 
@@ -561,29 +553,24 @@ public class AccountPreferenceControllerTest {
         accountType1 = new Account[1];
         accountType1[0] = new Account("Acct11", "com.acct1");
         when(mAccountManager.getAccountsByTypeAsUser(eq("com.acct1"), any(UserHandle.class)))
-            .thenReturn(accountType1);
+                .thenReturn(accountType1);
 
         mController.onResume();
 
-        verify(preferenceGroup, times(1)).addPreference(argThat(new PreferenceMatcher("Acct11")));
-        verify(preferenceGroup, times(1)).addPreference(argThat(new PreferenceMatcher("Acct12")));
-        verify(preferenceGroup, times(1)).removePreference(
-            argThat(new PreferenceMatcher("Acct12")));
+        verify(preferenceGroup, times(1)).addPreference(argThat(titleMatches("Acct11")));
+        verify(preferenceGroup, times(1)).addPreference(argThat(titleMatches("Acct12")));
+        verify(preferenceGroup, times(1)).removePreference(argThat(titleMatches("Acct12")));
     }
 
-    private static class PreferenceMatcher extends ArgumentMatcher<Preference> {
-
-        private final String mExpectedTitle;
-
-        public PreferenceMatcher(String title) {
-            mExpectedTitle = title;
-        }
-
-        @Override
-        public boolean matches(Object arg) {
-            final Preference preference = (Preference) arg;
-            return TextUtils.equals(mExpectedTitle, preference.getTitle());
-        }
+    private static ArgumentMatcher<Preference> titleMatches(String expected) {
+        return preference -> TextUtils.equals(expected, preference.getTitle());
     }
 
+    @Implements(AuthenticatorHelper.class)
+    public static class ShadowAuthenticatorHelper {
+        @Implementation
+        public Drawable getDrawableForType(Context context, final String accountType) {
+            return new ColorDrawable();
+        }
+    }
 }

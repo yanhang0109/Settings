@@ -16,41 +16,38 @@
 
 package com.android.settings.wifi;
 
+import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.os.UserManager.DISALLOW_CONFIG_WIFI;
 
 import android.annotation.NonNull;
 import android.app.Activity;
 import android.app.Dialog;
-import android.app.admin.DevicePolicyManager;
-import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Resources;
 import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.NetworkInfo;
 import android.net.NetworkInfo.State;
+import android.net.NetworkRequest;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
-import android.net.wifi.WpsInfo;
 import android.nfc.NfcAdapter;
 import android.os.Bundle;
-import android.os.HandlerThread;
-import android.os.Process;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Settings;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceCategory;
-import android.text.TextUtils;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
 import android.util.Log;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
@@ -58,6 +55,7 @@ import com.android.settings.LinkifyUtils;
 import com.android.settings.R;
 import com.android.settings.RestrictedSettingsFragment;
 import com.android.settings.SettingsActivity;
+import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.dashboard.SummaryLoader;
 import com.android.settings.location.ScanningSettings;
 import com.android.settings.search.BaseSearchIndexProvider;
@@ -89,18 +87,13 @@ public class WifiSettings extends RestrictedSettingsFragment
         WifiDialog.WifiDialogListener {
 
     private static final String TAG = "WifiSettings";
-    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
 
-    /* package */ static final int MENU_ID_WPS_PBC = Menu.FIRST;
-    private static final int MENU_ID_WPS_PIN = Menu.FIRST + 1;
     private static final int MENU_ID_CONNECT = Menu.FIRST + 6;
     private static final int MENU_ID_FORGET = Menu.FIRST + 7;
     private static final int MENU_ID_MODIFY = Menu.FIRST + 8;
     private static final int MENU_ID_WRITE_NFC = Menu.FIRST + 9;
 
     public static final int WIFI_DIALOG_ID = 1;
-    /* package */ static final int WPS_PBC_DIALOG_ID = 2;
-    private static final int WPS_PIN_DIALOG_ID = 3;
     private static final int WRITE_NFC_DIALOG_ID = 6;
 
     // Instance state keys
@@ -115,6 +108,10 @@ public class WifiSettings extends RestrictedSettingsFragment
     private static final String PREF_KEY_CONFIGURE_WIFI_SETTINGS = "configure_settings";
     private static final String PREF_KEY_SAVED_NETWORKS = "saved_networks";
 
+    private static boolean isVerboseLoggingEnabled() {
+        return WifiTracker.sVerboseLogging || Log.isLoggable(TAG, Log.VERBOSE);
+    }
+
     private final Runnable mUpdateAccessPointsRunnable = () -> {
         updateAccessPointPreferences();
     };
@@ -123,9 +120,11 @@ public class WifiSettings extends RestrictedSettingsFragment
     };
 
     protected WifiManager mWifiManager;
+    private ConnectivityManager mConnectivityManager;
     private WifiManager.ActionListener mConnectListener;
     private WifiManager.ActionListener mSaveListener;
     private WifiManager.ActionListener mForgetListener;
+    private CaptivePortalNetworkCallback mCaptivePortalNetworkCallback;
 
     /**
      * The state of {@link #isUiRestricted()} at {@link #onCreate(Bundle)}}. This is neccesary to
@@ -135,20 +134,21 @@ public class WifiSettings extends RestrictedSettingsFragment
     private boolean mIsRestricted;
 
     private WifiEnabler mWifiEnabler;
-    // An access point being editted is stored here.
+    // An access point being edited is stored here.
     private AccessPoint mSelectedAccessPoint;
 
     private WifiDialog mDialog;
     private WriteWifiConfigToNfcDialog mWifiToNfcDialog;
 
-    private ProgressBar mProgressHeader;
+    private View mProgressHeader;
 
     // this boolean extra specifies whether to disable the Next button when not connected. Used by
     // account creation outside of setup wizard.
     private static final String EXTRA_ENABLE_NEXT_ON_CONNECT = "wifi_enable_next_on_connect";
     // This string extra specifies a network to open the connect dialog on, so the user can enter
-    // network credentials.  This is used by quick settings for secured networks.
-    private static final String EXTRA_START_CONNECT_SSID = "wifi_start_connect_ssid";
+    // network credentials.  This is used by quick settings for secured networks, among other
+    // things.
+    public static final String EXTRA_START_CONNECT_SSID = "wifi_start_connect_ssid";
 
     // should Next button only be enabled when we have a connection?
     private boolean mEnableNextOnConnection;
@@ -162,8 +162,6 @@ public class WifiSettings extends RestrictedSettingsFragment
     private WifiTracker mWifiTracker;
     private String mOpenSsid;
 
-    private HandlerThread mBgThread;
-
     private AccessPointPreference.UserBadgeCache mUserBadgeCache;
 
     private PreferenceCategory mConnectedAccessPointPreferenceCategory;
@@ -175,7 +173,13 @@ public class WifiSettings extends RestrictedSettingsFragment
     private LinkablePreference mStatusMessagePreference;
 
     // For Search
-    private static final String DATA_KEY_REFERENCE = "main_toggle_wifi";
+    public static final String DATA_KEY_REFERENCE = "main_toggle_wifi";
+
+    /**
+     * Tracks whether the user initiated a connection via clicking in order to autoscroll to the
+     * network once connected.
+     */
+    private boolean mClickedConnect;
 
     /* End of "used in Wifi Setup context" */
 
@@ -188,9 +192,13 @@ public class WifiSettings extends RestrictedSettingsFragment
         super.onViewCreated(view, savedInstanceState);
         final Activity activity = getActivity();
         if (activity != null) {
-            mProgressHeader = (ProgressBar) setPinnedHeaderView(R.layout.wifi_progress_header);
+            mProgressHeader = setPinnedHeaderView(R.layout.wifi_progress_header)
+                    .findViewById(R.id.progress_bar_animation);
             setProgressBarVisible(false);
         }
+        ((SettingsActivity) activity).getSwitchBar().setSwitchBarText(
+                R.string.wifi_settings_master_switch_title,
+                R.string.wifi_settings_master_switch_title);
     }
 
     @Override
@@ -201,6 +209,12 @@ public class WifiSettings extends RestrictedSettingsFragment
         // loaded (ODR).
         setAnimationAllowed(false);
 
+        addPreferences();
+
+        mIsRestricted = isUiRestricted();
+    }
+
+    private void addPreferences() {
         addPreferencesFromResource(R.xml.wifi_settings);
 
         mConnectedAccessPointPreferenceCategory =
@@ -219,17 +233,6 @@ public class WifiSettings extends RestrictedSettingsFragment
         mStatusMessagePreference = new LinkablePreference(prefContext);
 
         mUserBadgeCache = new AccessPointPreference.UserBadgeCache(getPackageManager());
-
-        mIsRestricted = isUiRestricted();
-
-        mBgThread = new HandlerThread(TAG, Process.THREAD_PRIORITY_BACKGROUND);
-        mBgThread.start();
-    }
-
-    @Override
-    public void onDestroy() {
-        mBgThread.quit();
-        super.onDestroy();
     }
 
     @Override
@@ -237,8 +240,13 @@ public class WifiSettings extends RestrictedSettingsFragment
         super.onActivityCreated(savedInstanceState);
 
         mWifiTracker = WifiTrackerFactory.create(
-                getActivity(), this, mBgThread.getLooper(), true, true, false);
+                getActivity(), this, getLifecycle(), true, true);
         mWifiManager = mWifiTracker.getManager();
+
+        final Activity activity = getActivity();
+        if (activity != null) {
+            mConnectivityManager = getActivity().getSystemService(ConnectivityManager.class);
+        }
 
         mConnectListener = new WifiManager.ActionListener() {
                                    @Override
@@ -339,43 +347,19 @@ public class WifiSettings extends RestrictedSettingsFragment
         // On/off switch is hidden for Setup Wizard (returns null)
         mWifiEnabler = createWifiEnabler();
 
-        mWifiTracker.startTracking();
-
         if (mIsRestricted) {
-            if (!isUiRestrictedByOnlyAdmin()) {
-                getEmptyTextView().setText(R.string.wifi_empty_list_user_restricted);
-            }
-            getPreferenceScreen().removeAll();
+            restrictUi();
             return;
         }
 
         onWifiStateChanged(mWifiManager.getWifiState());
     }
 
-    /**
-     * Only update the AP list if there are not any APs currently shown.
-     *
-     * <p>Thus forceUpdate will only be called during cold start or when toggling between wifi on
-     * and off. In other use cases, the previous APs will remain until the next update is received
-     * from {@link WifiTracker}.
-     */
-    private void conditionallyForceUpdateAPs() {
-        if (mAccessPointsPreferenceCategory.getPreferenceCount() > 0
-                && mAccessPointsPreferenceCategory.getPreference(0) instanceof
-                        AccessPointPreference) {
-            // Make sure we don't update due to callbacks initiated by sticky broadcasts in
-            // WifiTracker.
-            Log.d(TAG, "Did not force update APs due to existing APs displayed");
-            getView().removeCallbacks(mUpdateAccessPointsRunnable);
-            return;
+    private void restrictUi() {
+        if (!isUiRestrictedByOnlyAdmin()) {
+            getEmptyTextView().setText(R.string.wifi_empty_list_user_restricted);
         }
-        setProgressBarVisible(true);
-        mWifiTracker.forceUpdate();
-        if (DEBUG) {
-            Log.d(TAG, "WifiSettings force update APs: " + mWifiTracker.getAccessPoints());
-        }
-        getView().removeCallbacks(mUpdateAccessPointsRunnable);
-        updateAccessPointPreferences();
+        getPreferenceScreen().removeAll();
     }
 
     /**
@@ -391,6 +375,15 @@ public class WifiSettings extends RestrictedSettingsFragment
     public void onResume() {
         final Activity activity = getActivity();
         super.onResume();
+
+        // Because RestrictedSettingsFragment's onResume potentially requests authorization,
+        // which changes the restriction state, recalculate it.
+        final boolean alreadyImmutablyRestricted = mIsRestricted;
+        mIsRestricted = isUiRestricted();
+        if (!alreadyImmutablyRestricted && mIsRestricted) {
+            restrictUi();
+        }
+
         if (mWifiEnabler != null) {
             mWifiEnabler.resume(activity);
         }
@@ -406,10 +399,23 @@ public class WifiSettings extends RestrictedSettingsFragment
 
     @Override
     public void onStop() {
-        mWifiTracker.stopTracking();
         getView().removeCallbacks(mUpdateAccessPointsRunnable);
         getView().removeCallbacks(mHideProgressBarRunnable);
+        unregisterCaptivePortalNetworkCallback();
         super.onStop();
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        final boolean formerlyRestricted = mIsRestricted;
+        mIsRestricted = isUiRestricted();
+        if (formerlyRestricted && !mIsRestricted
+                && getPreferenceScreen().getPreferenceCount() == 0) {
+            // De-restrict the ui
+            addPreferences();
+        }
     }
 
     @Override
@@ -439,38 +445,6 @@ public class WifiSettings extends RestrictedSettingsFragment
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // If the user is not allowed to configure wifi, do not handle menu selections.
-        if (mIsRestricted) {
-            return false;
-        }
-
-        switch (item.getItemId()) {
-            case MENU_ID_WPS_PBC:
-                showDialog(WPS_PBC_DIALOG_ID);
-                return true;
-                /*
-            case MENU_ID_P2P:
-                if (getActivity() instanceof SettingsActivity) {
-                    ((SettingsActivity) getActivity()).startPreferencePanel(
-                            WifiP2pSettings.class.getCanonicalName(),
-                            null,
-                            R.string.wifi_p2p_settings_title, null,
-                            this, 0);
-                } else {
-                    startFragment(this, WifiP2pSettings.class.getCanonicalName(),
-                            R.string.wifi_p2p_settings_title, -1, null);
-                }
-                return true;
-                */
-            case MENU_ID_WPS_PIN:
-                showDialog(WPS_PIN_DIALOG_ID);
-                return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
-
-    @Override
     public void onCreateContextMenu(ContextMenu menu, View view, ContextMenuInfo info) {
             Preference preference = (Preference) view.getTag();
 
@@ -484,7 +458,7 @@ public class WifiSettings extends RestrictedSettingsFragment
 
                 WifiConfiguration config = mSelectedAccessPoint.getConfig();
                 // Some configs are ineditable
-                if (isEditabilityLockedDown(getActivity(), config)) {
+                if (WifiUtils.isNetworkLockedDown(getActivity(), config)) {
                     return;
                 }
 
@@ -587,7 +561,7 @@ public class WifiSettings extends RestrictedSettingsFragment
     private void showDialog(AccessPoint accessPoint, int dialogMode) {
         if (accessPoint != null) {
             WifiConfiguration config = accessPoint.getConfig();
-            if (isEditabilityLockedDown(getActivity(), config) && accessPoint.isActive()) {
+            if (WifiUtils.isNetworkLockedDown(getActivity(), config) && accessPoint.isActive()) {
                 RestrictedLockUtils.sendShowAdminSupportDetailsIntent(getActivity(),
                         RestrictedLockUtils.getDeviceOwner(getActivity()));
                 return;
@@ -610,34 +584,32 @@ public class WifiSettings extends RestrictedSettingsFragment
     public Dialog onCreateDialog(int dialogId) {
         switch (dialogId) {
             case WIFI_DIALOG_ID:
-                AccessPoint ap = mDlgAccessPoint; // For manual launch
-                if (ap == null) { // For re-launch from saved state
-                    if (mAccessPointSavedState != null) {
-                        ap = new AccessPoint(getActivity(), mAccessPointSavedState);
-                        // For repeated orientation changes
-                        mDlgAccessPoint = ap;
+                if (mDlgAccessPoint == null && mAccessPointSavedState == null) {
+                    // add new network
+                    mDialog = WifiDialog
+                            .createFullscreen(getActivity(), this, mDlgAccessPoint, mDialogMode);
+                } else {
+                    // modify network
+                    if (mDlgAccessPoint == null) {
+                        // restore AP from save state
+                        mDlgAccessPoint = new AccessPoint(getActivity(), mAccessPointSavedState);
                         // Reset the saved access point data
                         mAccessPointSavedState = null;
                     }
+                    mDialog = WifiDialog
+                            .createModal(getActivity(), this, mDlgAccessPoint, mDialogMode);
                 }
-                // If it's null, fine, it's for Add Network
-                mSelectedAccessPoint = ap;
-                mDialog = new WifiDialog(getActivity(), this, ap, mDialogMode,
-                        /* no hide submit/connect */ false);
+
+                mSelectedAccessPoint = mDlgAccessPoint;
                 return mDialog;
-            case WPS_PBC_DIALOG_ID:
-                return new WpsDialog(getActivity(), WpsInfo.PBC);
-            case WPS_PIN_DIALOG_ID:
-                return new WpsDialog(getActivity(), WpsInfo.DISPLAY);
             case WRITE_NFC_DIALOG_ID:
                 if (mSelectedAccessPoint != null) {
                     mWifiToNfcDialog = new WriteWifiConfigToNfcDialog(
                             getActivity(),
-                            mSelectedAccessPoint.getSecurity(),
-                            new WifiManagerWrapper(mWifiManager));
+                            mSelectedAccessPoint.getSecurity());
                 } else if (mWifiNfcDialogSavedState != null) {
                     mWifiToNfcDialog = new WriteWifiConfigToNfcDialog(getActivity(),
-                            mWifiNfcDialogSavedState, new WifiManagerWrapper(mWifiManager));
+                            mWifiNfcDialogSavedState);
                 }
 
                 return mWifiToNfcDialog;
@@ -650,10 +622,6 @@ public class WifiSettings extends RestrictedSettingsFragment
         switch (dialogId) {
             case WIFI_DIALOG_ID:
                 return MetricsEvent.DIALOG_WIFI_AP_EDIT;
-            case WPS_PBC_DIALOG_ID:
-                return MetricsEvent.DIALOG_WIFI_PBC;
-            case WPS_PIN_DIALOG_ID:
-                return MetricsEvent.DIALOG_WIFI_PIN;
             case WRITE_NFC_DIALOG_ID:
                 return MetricsEvent.DIALOG_WIFI_WRITE_NFC;
             default:
@@ -678,8 +646,13 @@ public class WifiSettings extends RestrictedSettingsFragment
     private void updateAccessPointsDelayed() {
         // Safeguard from some delayed event handling
         if (getActivity() != null && !mIsRestricted && mWifiManager.isWifiEnabled()) {
+            final View view = getView();
+            final Handler handler = view.getHandler();
+            if (handler != null && handler.hasCallbacks(mUpdateAccessPointsRunnable)) {
+                return;
+            }
             setProgressBarVisible(true);
-            getView().postDelayed(mUpdateAccessPointsRunnable, 300 /* delay milliseconds */);
+            view.postDelayed(mUpdateAccessPointsRunnable, 300 /* delay milliseconds */);
         }
     }
 
@@ -693,7 +666,7 @@ public class WifiSettings extends RestrictedSettingsFragment
         final int wifiState = mWifiManager.getWifiState();
         switch (wifiState) {
             case WifiManager.WIFI_STATE_ENABLED:
-                conditionallyForceUpdateAPs();
+                updateAccessPointPreferences();
                 break;
 
             case WifiManager.WIFI_STATE_ENABLING:
@@ -711,19 +684,33 @@ public class WifiSettings extends RestrictedSettingsFragment
 
             case WifiManager.WIFI_STATE_DISABLED:
                 setOffMessage();
+                setAdditionalSettingsSummaries();
                 setProgressBarVisible(false);
                 break;
         }
     }
 
     /**
-     * Called when the connection state of wifi has changed and isConnected
-     * should be called to get the updated state.
+     * Called when the connection state of wifi has changed.
      */
     @Override
     public void onConnectedChanged() {
-        updateAccessPointsDelayed();
         changeNextButtonState(mWifiTracker.isConnected());
+    }
+
+    /** Helper method to return whether an AccessPoint is disabled due to a wrong password */
+    private static boolean isDisabledByWrongPassword(AccessPoint accessPoint) {
+        WifiConfiguration config = accessPoint.getConfig();
+        if (config == null) {
+            return false;
+        }
+        WifiConfiguration.NetworkSelectionStatus networkStatus =
+                config.getNetworkSelectionStatus();
+        if (networkStatus == null || networkStatus.isNetworkEnabled()) {
+            return false;
+        }
+        int reason = networkStatus.getNetworkSelectionDisableReason();
+        return WifiConfiguration.NetworkSelectionStatus.DISABLED_BY_WRONG_PASSWORD == reason;
     }
 
     private void updateAccessPointPreferences() {
@@ -733,8 +720,8 @@ public class WifiSettings extends RestrictedSettingsFragment
         }
         // AccessPoints are sorted by the WifiTracker
         final List<AccessPoint> accessPoints = mWifiTracker.getAccessPoints();
-        if (DEBUG) {
-            Log.d(TAG, "updateAccessPoints called for: " + accessPoints);
+        if (isVerboseLoggingEnabled()) {
+            Log.i(TAG, "updateAccessPoints called for: " + accessPoints);
         }
 
         boolean hasAvailableAccessPoints = false;
@@ -748,10 +735,7 @@ public class WifiSettings extends RestrictedSettingsFragment
             AccessPoint accessPoint = accessPoints.get(index);
             // Ignore access points that are out of range.
             if (accessPoint.isReachable()) {
-                String key = accessPoint.getBssid();
-                if (TextUtils.isEmpty(key)) {
-                    key = accessPoint.getSsidStr();
-                }
+                String key = accessPoint.getKey();
                 hasAvailableAccessPoints = true;
                 LongPressAccessPointPreference pref =
                         (LongPressAccessPointPreference) getCachedPreference(key);
@@ -760,14 +744,15 @@ public class WifiSettings extends RestrictedSettingsFragment
                     continue;
                 }
                 LongPressAccessPointPreference preference =
-                        createLongPressActionPointPreference(accessPoint);
+                        createLongPressAccessPointPreference(accessPoint);
                 preference.setKey(key);
                 preference.setOrder(index);
                 if (mOpenSsid != null && mOpenSsid.equals(accessPoint.getSsidStr())
-                        && !accessPoint.isSaved()
                         && accessPoint.getSecurity() != AccessPoint.SECURITY_NONE) {
-                    onPreferenceTreeClick(preference);
-                    mOpenSsid = null;
+                    if (!accessPoint.isSaved() || isDisabledByWrongPassword(accessPoint)) {
+                        onPreferenceTreeClick(preference);
+                        mOpenSsid = null;
+                    }
                 }
                 mAccessPointsPreferenceCategory.addPreference(preference);
                 accessPoint.setListener(WifiSettings.this);
@@ -794,10 +779,17 @@ public class WifiSettings extends RestrictedSettingsFragment
     }
 
     @NonNull
-    private LongPressAccessPointPreference createLongPressActionPointPreference(
+    private LongPressAccessPointPreference createLongPressAccessPointPreference(
             AccessPoint accessPoint) {
         return new LongPressAccessPointPreference(accessPoint, getPrefContext(), mUserBadgeCache,
-                false, R.drawable.ic_wifi_signal_0, this);
+                false /* forSavedNetworks */, R.drawable.ic_wifi_signal_0, this);
+    }
+
+    @NonNull
+    private ConnectedAccessPointPreference createConnectedAccessPointPreference(
+            AccessPoint accessPoint) {
+        return new ConnectedAccessPointPreference(accessPoint, getPrefContext(), mUserBadgeCache,
+                R.drawable.ic_wifi_signal_0, false /* forSavedNetworks */);
     }
 
     /**
@@ -824,10 +816,12 @@ public class WifiSettings extends RestrictedSettingsFragment
         }
 
         // Is the previous currently connected SSID different from the new one?
-        if (!((AccessPointPreference)
-                mConnectedAccessPointPreferenceCategory.getPreference(0))
-                        .getAccessPoint().getSsidStr().equals(
-                                connectedAp.getSsidStr())) {
+        ConnectedAccessPointPreference preference =
+                (ConnectedAccessPointPreference)
+                        (mConnectedAccessPointPreferenceCategory.getPreference(0));
+        // The AccessPoints need to be the same reference to ensure that updates are reflected
+        // in the UI.
+        if (preference.getAccessPoint() != connectedAp) {
             removeConnectedAccessPointPreference();
             addConnectedAccessPointPreference(connectedAp);
             return true;
@@ -835,8 +829,10 @@ public class WifiSettings extends RestrictedSettingsFragment
 
         // Else same AP is connected, simply refresh the connected access point preference
         // (first and only access point in this category).
-        ((LongPressAccessPointPreference) mConnectedAccessPointPreferenceCategory.getPreference(0))
-                .refresh();
+        preference.refresh();
+        // Update any potential changes to the connected network and ensure that the callback is
+        // registered after an onStop lifecycle event.
+        registerCaptivePortalNetworkCallback(getCurrentWifiNetwork(), preference);
         return true;
     }
 
@@ -845,43 +841,101 @@ public class WifiSettings extends RestrictedSettingsFragment
      * {@link #mConnectedAccessPointPreferenceCategory}.
      */
     private void addConnectedAccessPointPreference(AccessPoint connectedAp) {
-        String key = connectedAp.getBssid();
-        LongPressAccessPointPreference pref = (LongPressAccessPointPreference)
-                getCachedPreference(key);
-        if (pref == null) {
-            pref = createLongPressActionPointPreference(connectedAp);
-        }
+        final ConnectedAccessPointPreference pref =
+                createConnectedAccessPointPreference(connectedAp);
+        registerCaptivePortalNetworkCallback(getCurrentWifiNetwork(), pref);
 
-        // Save the state of the current access point in the bundle so that we can restore it
-        // in the Wifi Network Details Fragment
-        pref.getAccessPoint().saveWifiState(pref.getExtras());
-        pref.setFragment(WifiNetworkDetailsFragment.class.getName());
+        // Launch details page or captive portal on click.
+        pref.setOnPreferenceClickListener(
+                preference -> {
+                    pref.getAccessPoint().saveWifiState(pref.getExtras());
+                    if (mCaptivePortalNetworkCallback != null
+                            && mCaptivePortalNetworkCallback.isCaptivePortal()) {
+                        mConnectivityManager.startCaptivePortalApp(
+                                mCaptivePortalNetworkCallback.getNetwork());
+                    } else {
+                        launchNetworkDetailsFragment(pref);
+                    }
+                    return true;
+                });
+
+        pref.setOnGearClickListener(
+                preference -> {
+                    pref.getAccessPoint().saveWifiState(pref.getExtras());
+                    launchNetworkDetailsFragment(pref);
+                });
+
         pref.refresh();
 
         mConnectedAccessPointPreferenceCategory.addPreference(pref);
         mConnectedAccessPointPreferenceCategory.setVisible(true);
+        if (mClickedConnect) {
+            mClickedConnect = false;
+            scrollToPreference(mConnectedAccessPointPreferenceCategory);
+        }
+    }
+
+    private void registerCaptivePortalNetworkCallback(
+            Network wifiNetwork, ConnectedAccessPointPreference pref) {
+        if (wifiNetwork == null || pref == null) {
+            Log.w(TAG, "Network or Preference were null when registering callback.");
+            return;
+        }
+
+        if (mCaptivePortalNetworkCallback != null
+                && mCaptivePortalNetworkCallback.isSameNetworkAndPreference(wifiNetwork, pref)) {
+            return;
+        }
+
+        unregisterCaptivePortalNetworkCallback();
+
+        mCaptivePortalNetworkCallback = new CaptivePortalNetworkCallback(wifiNetwork, pref);
+        mConnectivityManager.registerNetworkCallback(
+                new NetworkRequest.Builder()
+                        .clearCapabilities()
+                        .addTransportType(TRANSPORT_WIFI)
+                        .build(),
+                mCaptivePortalNetworkCallback,
+                new Handler(Looper.getMainLooper()));
+    }
+
+    private void unregisterCaptivePortalNetworkCallback() {
+        if (mCaptivePortalNetworkCallback != null) {
+            try {
+                mConnectivityManager.unregisterNetworkCallback(mCaptivePortalNetworkCallback);
+            } catch (RuntimeException e) {
+                Log.e(TAG, "Unregistering CaptivePortalNetworkCallback failed.", e);
+            }
+            mCaptivePortalNetworkCallback = null;
+        }
+    }
+
+    private void launchNetworkDetailsFragment(ConnectedAccessPointPreference pref) {
+        new SubSettingLauncher(getContext())
+                .setTitle(R.string.pref_title_network_details)
+                .setDestination(WifiNetworkDetailsFragment.class.getName())
+                .setArguments(pref.getExtras())
+                .setSourceMetricsCategory(getMetricsCategory())
+                .launch();
+    }
+
+    private Network getCurrentWifiNetwork() {
+        return mWifiManager != null ? mWifiManager.getCurrentNetwork() : null;
     }
 
     /** Removes all preferences and hide the {@link #mConnectedAccessPointPreferenceCategory}. */
     private void removeConnectedAccessPointPreference() {
         mConnectedAccessPointPreferenceCategory.removeAll();
         mConnectedAccessPointPreferenceCategory.setVisible(false);
+        unregisterCaptivePortalNetworkCallback();
     }
 
     private void setAdditionalSettingsSummaries() {
         mAdditionalSettingsPreferenceCategory.addPreference(mConfigureWifiSettingsPreference);
-        final int defaultWakeupAvailable = getResources().getInteger(
-                com.android.internal.R.integer.config_wifi_wakeup_available);
-        boolean wifiWakeupAvailable = Settings.Global.getInt(
-                getContentResolver(), Settings.Global.WIFI_WAKEUP_AVAILABLE, defaultWakeupAvailable)
-                == 1;
-        if (wifiWakeupAvailable) {
-            boolean wifiWakeupEnabled = Settings.Global.getInt(
-                    getContentResolver(), Settings.Global.WIFI_WAKEUP_ENABLED, 0) == 1;
-            mConfigureWifiSettingsPreference.setSummary(getString(wifiWakeupEnabled
-                    ? R.string.wifi_configure_settings_preference_summary_wakeup_on
-                    : R.string.wifi_configure_settings_preference_summary_wakeup_off));
-        }
+        mConfigureWifiSettingsPreference.setSummary(getString(
+                isWifiWakeupEnabled()
+                        ? R.string.wifi_configure_settings_preference_summary_wakeup_on
+                        : R.string.wifi_configure_settings_preference_summary_wakeup_off));
         int numSavedNetworks = mWifiTracker.getNumSavedNetworks();
         if (numSavedNetworks > 0) {
             mAdditionalSettingsPreferenceCategory.addPreference(mSavedNetworksPreference);
@@ -893,6 +947,18 @@ public class WifiSettings extends RestrictedSettingsFragment
         }
     }
 
+    private boolean isWifiWakeupEnabled() {
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        ContentResolver contentResolver = getContentResolver();
+        return Settings.Global.getInt(contentResolver,
+                        Settings.Global.WIFI_WAKEUP_ENABLED, 0) == 1
+                && Settings.Global.getInt(contentResolver,
+                        Settings.Global.WIFI_SCAN_ALWAYS_AVAILABLE, 0) == 1
+                && Settings.Global.getInt(contentResolver,
+                        Settings.Global.AIRPLANE_MODE_ON, 0) == 0
+                && !powerManager.isPowerSaveMode();
+    }
+
     private void setOffMessage() {
         final CharSequence title = getText(R.string.wifi_empty_list_wifi_off);
         // Don't use WifiManager.isScanAlwaysAvailable() to check the Wi-Fi scanning mode. Instead,
@@ -902,15 +968,12 @@ public class WifiSettings extends RestrictedSettingsFragment
                 Settings.Global.WIFI_SCAN_ALWAYS_AVAILABLE, 0) == 1;
         final CharSequence description = wifiScanningMode ? getText(R.string.wifi_scan_notify_text)
                 : getText(R.string.wifi_scan_notify_text_scanning_off);
-        final LinkifyUtils.OnClickListener clickListener = new LinkifyUtils.OnClickListener() {
-            @Override
-            public void onClick() {
-                final SettingsActivity activity = (SettingsActivity) getActivity();
-                activity.startPreferencePanel(WifiSettings.this,
-                        ScanningSettings.class.getName(),
-                        null, R.string.location_scanning_screen_title, null, null, 0);
-            }
-        };
+        final LinkifyUtils.OnClickListener clickListener =
+                () -> new SubSettingLauncher(getContext())
+                        .setDestination(ScanningSettings.class.getName())
+                        .setTitle(R.string.location_scanning_screen_title)
+                        .setSourceMetricsCategory(getMetricsCategory())
+                        .launch();
         mStatusMessagePreference.setText(title, description, clickListener);
         removeConnectedAccessPointPreference();
         mAccessPointsPreferenceCategory.removeAll();
@@ -926,7 +989,7 @@ public class WifiSettings extends RestrictedSettingsFragment
 
     protected void setProgressBarVisible(boolean visible) {
         if (mProgressHeader != null) {
-            mProgressHeader.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+            mProgressHeader.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -1002,9 +1065,10 @@ public class WifiSettings extends RestrictedSettingsFragment
 
     protected void connect(final WifiConfiguration config, boolean isSavedNetwork) {
         // Log subtype if configuration is a saved network.
-        mMetricsFeatureProvider.action(getActivity(), MetricsEvent.ACTION_WIFI_CONNECT,
+        mMetricsFeatureProvider.action(getVisibilityLogger(), MetricsEvent.ACTION_WIFI_CONNECT,
                 isSavedNetwork);
         mWifiManager.connect(config, mConnectListener);
+        mClickedConnect = true;
     }
 
     protected void connect(final int networkId, boolean isSavedNetwork) {
@@ -1025,7 +1089,7 @@ public class WifiSettings extends RestrictedSettingsFragment
     }
 
     @Override
-    protected int getHelpResource() {
+    public int getHelpResource() {
         return R.string.help_url_wifi;
     }
 
@@ -1039,7 +1103,7 @@ public class WifiSettings extends RestrictedSettingsFragment
                 public void run() {
                     Object tag = accessPoint.getTag();
                     if (tag != null) {
-                        ((LongPressAccessPointPreference) tag).refresh();
+                        ((AccessPointPreference) tag).refresh();
                     }
                 }
             });
@@ -1048,7 +1112,7 @@ public class WifiSettings extends RestrictedSettingsFragment
 
     @Override
     public void onLevelChanged(AccessPoint accessPoint) {
-        ((LongPressAccessPointPreference) accessPoint.getTag()).onLevelChanged();
+        ((AccessPointPreference) accessPoint.getTag()).onLevelChanged();
     }
 
     public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
@@ -1058,84 +1122,19 @@ public class WifiSettings extends RestrictedSettingsFragment
                 final List<SearchIndexableRaw> result = new ArrayList<>();
                 final Resources res = context.getResources();
 
-                // Add fragment title
-                SearchIndexableRaw data = new SearchIndexableRaw(context);
-                data.title = res.getString(R.string.wifi_settings);
-                data.screenTitle = res.getString(R.string.wifi_settings);
-                data.keywords = res.getString(R.string.keywords_wifi);
-                data.key = DATA_KEY_REFERENCE;
-                result.add(data);
-
-                // Add saved Wi-Fi access points
-                final List<AccessPoint> accessPoints =
-                        WifiTracker.getCurrentAccessPoints(context, true, false, false);
-                for (AccessPoint accessPoint : accessPoints) {
-                    data = new SearchIndexableRaw(context);
-                    data.title = accessPoint.getSsidStr();
+                // Add fragment title if we are showing this fragment
+                if (res.getBoolean(R.bool.config_show_wifi_settings)) {
+                    SearchIndexableRaw data = new SearchIndexableRaw(context);
+                    data.title = res.getString(R.string.wifi_settings);
                     data.screenTitle = res.getString(R.string.wifi_settings);
-                    data.enabled = enabled;
+                    data.keywords = res.getString(R.string.keywords_wifi);
+                    data.key = DATA_KEY_REFERENCE;
                     result.add(data);
                 }
 
                 return result;
             }
         };
-
-    /**
-     * Returns true if the config is not editable through Settings.
-     * @param context Context of caller
-     * @param config The WiFi config.
-     * @return true if the config is not editable through Settings.
-     */
-    static boolean isEditabilityLockedDown(Context context, WifiConfiguration config) {
-        return !canModifyNetwork(context, config);
-    }
-
-    /**
-     * This method is a stripped version of WifiConfigStore.canModifyNetwork.
-     * TODO: refactor to have only one method.
-     * @param context Context of caller
-     * @param config The WiFi config.
-     * @return true if Settings can modify the config.
-     */
-    static boolean canModifyNetwork(Context context, WifiConfiguration config) {
-        if (config == null) {
-            return true;
-        }
-
-        final DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(
-                Context.DEVICE_POLICY_SERVICE);
-
-        // Check if device has DPM capability. If it has and dpm is still null, then we
-        // treat this case with suspicion and bail out.
-        final PackageManager pm = context.getPackageManager();
-        if (pm.hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN) && dpm == null) {
-            return false;
-        }
-
-        boolean isConfigEligibleForLockdown = false;
-        if (dpm != null) {
-            final ComponentName deviceOwner = dpm.getDeviceOwnerComponentOnAnyUser();
-            if (deviceOwner != null) {
-                final int deviceOwnerUserId = dpm.getDeviceOwnerUserId();
-                try {
-                    final int deviceOwnerUid = pm.getPackageUidAsUser(deviceOwner.getPackageName(),
-                            deviceOwnerUserId);
-                    isConfigEligibleForLockdown = deviceOwnerUid == config.creatorUid;
-                } catch (NameNotFoundException e) {
-                    // don't care
-                }
-            }
-        }
-        if (!isConfigEligibleForLockdown) {
-            return true;
-        }
-
-        final ContentResolver resolver = context.getContentResolver();
-        final boolean isLockdownFeatureEnabled = Settings.Global.getInt(resolver,
-                Settings.Global.WIFI_DEVICE_OWNER_CONFIGS_LOCKDOWN, 0) != 0;
-        return !isLockdownFeatureEnabled;
-    }
 
     private static class SummaryProvider
             implements SummaryLoader.SummaryProvider, OnSummaryChangeListener {

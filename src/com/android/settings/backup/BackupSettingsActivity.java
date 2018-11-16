@@ -23,7 +23,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.UserHandle;
-import android.support.annotation.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
 import android.util.Log;
 
 import com.android.settings.R;
@@ -58,9 +58,17 @@ public class BackupSettingsActivity extends Activity implements Indexable {
                         "No manufacturer settings found, launching the backup settings directly");
             }
             Intent intent = backupHelper.getIntentForBackupSettings();
-            // enable the activity before launching it
-            getPackageManager().setComponentEnabledSetting(intent.getComponent(),
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
+            try {
+                // enable the activity before launching it
+                getPackageManager().setComponentEnabledSetting(
+                        intent.getComponent(),
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP);
+            } catch (SecurityException e) {
+                Log.w(TAG, "Trying to enable activity " + intent.getComponent() + " but couldn't: "
+                        + e.getMessage());
+                // the activity may already be enabled
+            }
 
             // use startActivityForResult to let the activity check the caller signature
             startActivityForResult(intent, 1);
@@ -94,14 +102,12 @@ public class BackupSettingsActivity extends Activity implements Indexable {
 
                     // Add the activity title
                     SearchIndexableRaw data = new SearchIndexableRaw(context);
-                    data.title = context.getResources().getString(R.string.privacy_settings_title);
-                    data.screenTitle = context.getResources().getString(
-                            R.string.privacy_settings_title);
-                    data.keywords = context.getResources().getString(
-                            R.string.keywords_backup);
+                    data.title = context.getString(R.string.privacy_settings_title);
+                    data.screenTitle = context.getString(R.string.settings_label);
+                    data.keywords = context.getString(R.string.keywords_backup);
                     data.intentTargetPackage = context.getPackageName();
                     data.intentTargetClass = BackupSettingsActivity.class.getName();
-                    data.intentAction = "android.intent.action.MAIN";
+                    data.intentAction = Intent.ACTION_MAIN;
                     data.key = BACKUP_SEARCH_INDEX_KEY;
                     result.add(data);
 
@@ -110,7 +116,7 @@ public class BackupSettingsActivity extends Activity implements Indexable {
 
                 @Override
                 public List<String> getNonIndexableKeys(Context context) {
-                    final List<String> keys = new ArrayList<String>();
+                    final List<String> keys = super.getNonIndexableKeys(context);
 
                     // For non-primary user, no backup is available, so don't show it in search
                     // TODO: http://b/22388012

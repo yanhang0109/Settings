@@ -16,14 +16,16 @@
 
 package com.android.settings.system;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import android.content.Context;
-import android.os.UserManager;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 import com.android.settings.testutils.XmlTestUtils;
-import com.android.settings.testutils.shadow.ShadowUserManager;
+import com.android.settings.testutils.shadow.SettingsShadowResources;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RuntimeEnvironment;
@@ -31,25 +33,24 @@ import org.robolectric.annotation.Config;
 
 import java.util.List;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION,
-        shadows = {
-                ShadowUserManager.class
-        })
+@Config(shadows = SettingsShadowResources.class)
 public class SystemDashboardFragmentTest {
+
+    @Before
+    public void setup() {
+        SettingsShadowResources.overrideResource(
+                com.android.internal.R.bool.config_supportSystemNavigationKeys, true);
+    }
+
+    @After
+    public void tearDown() {
+        SettingsShadowResources.reset();
+    }
 
     @Test
     public void testNonIndexableKeys_existInXmlLayout() {
-        final Context context = spy(RuntimeEnvironment.application);
-        UserManager manager = mock(UserManager.class);
-        when(manager.isAdminUser()).thenReturn(false);
-        doReturn(manager).when(context).getSystemService(Context.USER_SERVICE);
+        final Context context = RuntimeEnvironment.application;
         final List<String> niks = SystemDashboardFragment.SEARCH_INDEX_DATA_PROVIDER
                 .getNonIndexableKeys(context);
         final int xmlId = (new SystemDashboardFragment()).getPreferenceScreenResId();

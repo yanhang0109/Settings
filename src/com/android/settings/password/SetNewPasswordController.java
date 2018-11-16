@@ -34,8 +34,6 @@ import android.os.UserManager;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.widget.LockPatternUtils;
-import com.android.settings.ChooseLockGeneric;
-import com.android.settings.ChooseLockSettingsHelper;
 import com.android.settings.Utils;
 
 /**
@@ -57,7 +55,8 @@ final class SetNewPasswordController {
      */
     private final int mTargetUserId;
     private final PackageManager mPackageManager;
-    @Nullable private final IFingerprintManager mFingerprintManager;
+    @Nullable
+    private final FingerprintManager mFingerprintManager;
     private final DevicePolicyManager mDevicePolicyManager;
     private final Ui mUi;
 
@@ -78,13 +77,9 @@ final class SetNewPasswordController {
         }
         // Create a wrapper of FingerprintManager for testing, see IFingerPrintManager for details.
         final FingerprintManager fingerprintManager = Utils.getFingerprintManagerOrNull(context);
-        final IFingerprintManager fingerprintManagerWrapper =
-                fingerprintManager == null
-                        ? null
-                        : new FingerprintManagerWrapper(fingerprintManager);
         return new SetNewPasswordController(userId,
                 context.getPackageManager(),
-                fingerprintManagerWrapper,
+                fingerprintManager,
                 (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE), ui);
     }
 
@@ -92,7 +87,7 @@ final class SetNewPasswordController {
     SetNewPasswordController(
             int targetUserId,
             PackageManager packageManager,
-            IFingerprintManager fingerprintManager,
+            FingerprintManager fingerprintManager,
             DevicePolicyManager devicePolicyManager,
             Ui ui) {
         mTargetUserId = targetUserId;

@@ -22,6 +22,7 @@ import static android.support.test.espresso.assertion.ViewAssertions.matches;
 import static android.support.test.espresso.matcher.ViewMatchers.Visibility.VISIBLE;
 import static android.support.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static android.support.test.espresso.matcher.ViewMatchers.withEffectiveVisibility;
+import static android.support.test.espresso.matcher.ViewMatchers.withId;
 import static android.support.test.espresso.matcher.ViewMatchers.withText;
 
 import static com.google.common.truth.Truth.assertThat;
@@ -30,6 +31,7 @@ import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.Mockito.atMost;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,12 +45,15 @@ import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiSsid;
+import android.provider.Settings;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.rule.ActivityTestRule;
 import android.support.test.runner.AndroidJUnit4;
 
 import com.android.settings.Settings.WifiSettingsActivity;
+import com.android.settingslib.utils.ThreadUtils;
 import com.android.settingslib.wifi.AccessPoint;
+import com.android.settingslib.wifi.TestAccessPointBuilder;
 import com.android.settingslib.wifi.WifiTracker;
 import com.android.settingslib.wifi.WifiTracker.WifiListener;
 import com.android.settingslib.wifi.WifiTrackerFactory;
@@ -56,6 +61,7 @@ import com.android.settingslib.wifi.WifiTrackerFactory;
 import com.google.common.collect.Lists;
 
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -66,26 +72,29 @@ import java.util.List;
 
 @RunWith(AndroidJUnit4.class)
 public class WifiSettingsUiTest {
-
-    // TODO(b/37714546): Investigate why resource ids are not resolving correctly in the test apk,
-    // then remove this manual string entry
-    /** R.string.wifi_configure_settings_preference_title */
-    private static final String WIFI_PREFERENCES = "Wi\u2011Fi preferences";
-    /** R.string.wifi_saved_access_points_label */
-    private static final String SAVED_NETWORKS = "Saved networks";
-    /** R.string.wifi_empty_list_wifi_off */
-    private static final String WIFI_OFF_MESSAGE = "To see available networks, turn Wi\u2011Fi on.";
-    /** R.string.wifi_display_status_connected */
-    private static final String CONNECTED = "Connected";
-
     private static final String TEST_SSID = "\"Test Ssid\"";
     private static final String TEST_UNQUOTED_SSID = "Test Ssid";
     private static final String TEST_BSSID = "0a:08:5c:67:89:00";
     private static final int TEST_RSSI = 123;
     private static final int TEST_NETWORK_ID = 1;
 
-    @Mock private WifiTracker mWifiTracker;
-    @Mock private WifiManager mWifiManager;
+    // Keys used to lookup resources by name (see the resourceId/resourceString helper methods).
+    private static final String ID = "id";
+    private static final String STRING = "string";
+    private static final String WIFI_CONFIGURE_SETTINGS_PREFERENCE_TITLE =
+            "wifi_configure_settings_preference_title";
+    private static final String WIFI_SAVED_ACCESS_POINTS_LABEL = "wifi_saved_access_points_label";
+    private static final String WIFI_EMPTY_LIST_WIFI_OFF = "wifi_empty_list_wifi_off";
+    private static final String WIFI_DISPLAY_STATUS_CONNECTED = "wifi_display_status_connected";
+    private static final String WIFI_PASSWORD = "wifi_password";
+    private static final String WIFI_SHOW_PASSWORD = "wifi_show_password";
+    private static final String PASSWORD_LAYOUT = "password_layout";
+    private static final String PASSWORD = "password";
+
+    @Mock
+    private WifiTracker mWifiTracker;
+    @Mock
+    private WifiManager mWifiManager;
     private Context mContext;
     private WifiListener mWifiListener;
 
@@ -99,6 +108,21 @@ public class WifiSettingsUiTest {
         mContext = InstrumentationRegistry.getTargetContext();
         WifiTrackerFactory.setTestingWifiTracker(mWifiTracker);
         when(mWifiTracker.getManager()).thenReturn(mWifiManager);
+    }
+
+    /**
+     * Helper to get around the problem that directly accessing settings resource id's from
+     * com.android.settings.R via R.(type).(name) (eg R.id.password or
+     * R.string.wifi_configure_settings_preference_title) may not work due to mismatched resource
+     * ids. See b/37714546 and b/63546650.
+     */
+    private int resourceId(String type, String name) {
+        return mContext.getResources().getIdentifier(name, type, mContext.getPackageName());
+    }
+
+    /** Similar to {@link #resourceId}, but for accessing R.string.<name> values. */
+    private String resourceString(String name) {
+        return mContext.getResources().getString(resourceId(STRING, name));
     }
 
     private void setupConnectedAccessPoint() {
@@ -120,14 +144,20 @@ public class WifiSettingsUiTest {
         assertThat(accessPoint.getBssid()).isEqualTo(TEST_BSSID);
         assertThat(accessPoint.getNetworkInfo()).isNotNull();
         assertThat(accessPoint.isActive()).isTrue();
-        assertThat(accessPoint.getSettingsSummary()).isEqualTo(CONNECTED);
+        assertThat(accessPoint.getSettingsSummary()).isEqualTo(
+                resourceString(WIFI_DISPLAY_STATUS_CONNECTED));
 
         when(mWifiTracker.getAccessPoints()).thenReturn(
                 Lists.asList(accessPoint, new AccessPoint[]{}));
     }
 
-    private void launchActivity() {
-        mActivityRule.launchActivity(new Intent("android.settings.WIFI_SETTINGS"));
+    /** Launch the activity via an Intent with a String extra. */
+    private void launchActivity(String extraName, String extraValue) {
+        Intent intent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+        if (extraName != null && extraValue != null) {
+            intent.putExtra(extraName, extraValue);
+        }
+        mActivityRule.launchActivity(intent);
 
         verify(mWifiTracker).getManager();
 
@@ -137,6 +167,11 @@ public class WifiSettingsUiTest {
         assertThat(mWifiListener).isNotNull();
     }
 
+    /** Helper to launch the activity with no extra. */
+    private void launchActivity() {
+        launchActivity(null, null);
+    }
+
     private void setWifiState(int wifiState) {
         when(mWifiManager.getWifiState()).thenReturn(wifiState);
         when(mWifiManager.isWifiEnabled()).thenReturn(wifiState == WifiManager.WIFI_STATE_ENABLED);
@@ -144,7 +179,7 @@ public class WifiSettingsUiTest {
 
     private void callOnWifiStateChanged(int state) {
         mActivityRule.getActivity().getMainThreadHandler()
-                .post( () -> mWifiListener.onWifiStateChanged(state) );
+                .post(() -> mWifiListener.onWifiStateChanged(state));
     }
 
     @Test
@@ -156,17 +191,30 @@ public class WifiSettingsUiTest {
     public void shouldShowWifiPreferences() {
         launchActivity();
 
-        onView(withText(WIFI_PREFERENCES)).check(matches(isDisplayed()));
+        onView(withText(resourceId(STRING, WIFI_CONFIGURE_SETTINGS_PREFERENCE_TITLE))).check(
+                matches(isDisplayed()));
     }
 
     @Test
-    public void noSavedNetworks_shouldNotShowSavedNetworksButton() {
+    public void noSavedNetworks_wifiEnabled_shouldNotShowSavedNetworksButton() {
         setWifiState(WifiManager.WIFI_STATE_ENABLED);
         when(mWifiTracker.getNumSavedNetworks()).thenReturn(0);
 
         launchActivity();
 
-        onView(withText(SAVED_NETWORKS)).check(matches(not(isDisplayed())));
+        onView(withText(resourceId(STRING, WIFI_SAVED_ACCESS_POINTS_LABEL))).check(
+                matches(not(isDisplayed())));
+    }
+
+    @Test
+    public void noSavedNetworks_wifiDisabled_shouldNotShowSavedNetworksButton() {
+        setWifiState(WifiManager.WIFI_STATE_DISABLED);
+        when(mWifiTracker.getNumSavedNetworks()).thenReturn(0);
+
+        launchActivity();
+
+        onView(withText(resourceId(STRING, WIFI_SAVED_ACCESS_POINTS_LABEL))).check(
+                doesNotExist());
     }
 
     @Test
@@ -176,7 +224,7 @@ public class WifiSettingsUiTest {
 
         launchActivity();
 
-        onView(allOf(withText(SAVED_NETWORKS),
+        onView(allOf(withText(resourceId(STRING, WIFI_SAVED_ACCESS_POINTS_LABEL)),
                 withEffectiveVisibility(VISIBLE))).check(matches(isDisplayed()));
     }
 
@@ -187,7 +235,8 @@ public class WifiSettingsUiTest {
         launchActivity();
         callOnWifiStateChanged(WifiManager.WIFI_STATE_DISABLED);
 
-        onView(withText(startsWith(WIFI_OFF_MESSAGE))).check(matches(isDisplayed()));
+        onView(withText(startsWith(resourceString(WIFI_EMPTY_LIST_WIFI_OFF)))).check(
+                matches(isDisplayed()));
     }
 
     @Test
@@ -197,7 +246,8 @@ public class WifiSettingsUiTest {
         launchActivity();
         callOnWifiStateChanged(WifiManager.WIFI_STATE_ENABLED);
 
-        onView(withText(startsWith(WIFI_OFF_MESSAGE))).check(doesNotExist());
+        onView(withText(startsWith(resourceString(WIFI_EMPTY_LIST_WIFI_OFF)))).check(
+                doesNotExist());
     }
 
     @Test
@@ -208,25 +258,108 @@ public class WifiSettingsUiTest {
 
         launchActivity();
 
-        onView(withText(CONNECTED)).check(matches(isDisplayed()));
+        onView(withText(resourceString(WIFI_DISPLAY_STATUS_CONNECTED))).check(
+                matches(isDisplayed()));
     }
 
     @Test
-    public void resumingAp_shouldNotForceUpdateWhenExistingAPsAreListed() {
+    public void changingSecurityStateOnApShouldNotCauseMultipleListItems() {
         setWifiState(WifiManager.WIFI_STATE_ENABLED);
-        setupConnectedAccessPoint();
+        TestAccessPointBuilder builder = new TestAccessPointBuilder(mContext)
+                .setSsid(TEST_SSID)
+                .setSecurity(AccessPoint.SECURITY_NONE)
+                .setRssi(TEST_RSSI);
+        AccessPoint open = builder.build();
+
+        builder.setSecurity(AccessPoint.SECURITY_EAP);
+        AccessPoint eap = builder.build();
+
+        builder.setSecurity(AccessPoint.SECURITY_WEP);
+        AccessPoint wep = builder.build();
+
+        // Return a different security state each time getAccessPoints is invoked
+        when(mWifiTracker.getAccessPoints())
+                .thenReturn(Lists.newArrayList(open))
+                .thenReturn(Lists.newArrayList(eap))
+                .thenReturn(Lists.newArrayList(wep));
+
+        launchActivity();
+
+        onView(withText(TEST_SSID)).check(matches(isDisplayed()));
+
+        ThreadUtils.postOnMainThread(() -> mWifiListener.onAccessPointsChanged());
+        onView(withText(TEST_SSID)).check(matches(isDisplayed()));
+
+        ThreadUtils.postOnMainThread(() -> mWifiListener.onAccessPointsChanged());
+        onView(withText(TEST_SSID)).check(matches(isDisplayed()));
+    }
+
+    @Test
+    public void wrongPasswordSavedNetwork() {
+        setWifiState(WifiManager.WIFI_STATE_ENABLED);
+
+        // Set up an AccessPoint that is disabled due to incorrect password.
+        WifiConfiguration config = new WifiConfiguration();
+        config.SSID = TEST_SSID;
+        config.BSSID = TEST_BSSID;
+        config.networkId = TEST_NETWORK_ID;
+        config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_PSK);
+
+        WifiConfiguration.NetworkSelectionStatus selectionStatus =
+                new WifiConfiguration.NetworkSelectionStatus();
+        selectionStatus.setNetworkSelectionDisableReason(
+                WifiConfiguration.NetworkSelectionStatus.DISABLED_BY_WRONG_PASSWORD);
+        selectionStatus.setNetworkSelectionStatus(
+                WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_TEMPORARY_DISABLED);
+        config.setNetworkSelectionStatus(selectionStatus);
+
+        WifiInfo wifiInfo = new WifiInfo();
+        wifiInfo.setSSID(WifiSsid.createFromAsciiEncoded(TEST_UNQUOTED_SSID));
+        wifiInfo.setBSSID(TEST_BSSID);
+        wifiInfo.setRssi(TEST_RSSI);
+        wifiInfo.setNetworkId(TEST_NETWORK_ID);
+        AccessPoint accessPoint = new AccessPoint(mContext, config);
+        accessPoint.update(config, wifiInfo, null);
+
+        // Make sure we've set up our access point correctly.
+        assertThat(accessPoint.getSsidStr()).isEqualTo(TEST_UNQUOTED_SSID);
+        assertThat(accessPoint.getBssid()).isEqualTo(TEST_BSSID);
+        assertThat(accessPoint.isActive()).isFalse();
+        assertThat(accessPoint.getConfig()).isNotNull();
+        WifiConfiguration.NetworkSelectionStatus networkStatus =
+                accessPoint.getConfig().getNetworkSelectionStatus();
+        assertThat(networkStatus).isNotNull();
+        assertThat(networkStatus.isNetworkEnabled()).isFalse();
+        assertThat(networkStatus.getNetworkSelectionDisableReason()).isEqualTo(
+                WifiConfiguration.NetworkSelectionStatus.DISABLED_BY_WRONG_PASSWORD);
+
+        when(mWifiTracker.getAccessPoints()).thenReturn(Lists.newArrayList(accessPoint));
+        launchActivity(WifiSettings.EXTRA_START_CONNECT_SSID, accessPoint.getSsidStr());
+
+        // Make sure that the password dialog is visible.
+        onView(withText(resourceId(STRING, WIFI_PASSWORD))).check(matches(isDisplayed()));
+        onView(withText(resourceId(STRING, WIFI_SHOW_PASSWORD))).check(matches(isDisplayed()));
+        onView(withId(resourceId(ID, PASSWORD_LAYOUT))).check(matches(isDisplayed()));
+        onView(withId(resourceId(ID, PASSWORD))).check(matches(isDisplayed()));
+    }
+
+    @Ignore("b/73796195")
+    @Test
+    public void onConnectedChanged_shouldNotFetchAPs() {
+        setWifiState(WifiManager.WIFI_STATE_ENABLED);
         when(mWifiTracker.isConnected()).thenReturn(true);
 
         launchActivity();
 
-        onView(withText(CONNECTED)).check(matches(isDisplayed()));
-        verify(mWifiTracker).forceUpdate();
+        verify(mWifiTracker, times(1)).getAccessPoints();
+        onView(withText(WIFI_DISPLAY_STATUS_CONNECTED)).check(matches(isDisplayed()));
 
-        Activity activity = mActivityRule.getActivity();
-        activity.finish();
+        // Invoke onConnectedChanged
+        when(mWifiTracker.isConnected()).thenReturn(false);
+        mWifiListener.onConnectedChanged();
+
+        // Verify no additional call to getAccessPoints
         getInstrumentation().waitForIdleSync();
-
-        getInstrumentation().callActivityOnStart(activity);
-        verify(mWifiTracker, atMost(1)).forceUpdate();
+        verify(mWifiTracker, times(1)).getAccessPoints();
     }
 }

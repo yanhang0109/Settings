@@ -15,21 +15,19 @@
  */
 package com.android.settings.connecteddevice;
 
+import android.app.Activity;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.provider.SearchIndexableResource;
+import androidx.annotation.VisibleForTesting;
 
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.settings.R;
-import com.android.settings.bluetooth.BluetoothMasterSwitchPreferenceController;
-import com.android.settings.bluetooth.Utils;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
 import com.android.settings.dashboard.DashboardFragment;
-import com.android.settings.deviceinfo.UsbBackend;
+import com.android.settings.dashboard.SummaryLoader;
 import com.android.settings.nfc.NfcPreferenceController;
 import com.android.settings.search.BaseSearchIndexProvider;
-import com.android.settings.search.Indexable;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.Lifecycle;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -38,7 +36,11 @@ import java.util.List;
 public class ConnectedDeviceDashboardFragment extends DashboardFragment {
 
     private static final String TAG = "ConnectedDeviceFrag";
-    private UsbModePreferenceController mUsbPrefController;
+
+    @VisibleForTesting
+    static final String KEY_CONNECTED_DEVICES = "connected_device_list";
+    @VisibleForTesting
+    static final String KEY_AVAILABLE_DEVICES = "available_device_list";
 
     @Override
     public int getMetricsCategory() {
@@ -51,33 +53,76 @@ public class ConnectedDeviceDashboardFragment extends DashboardFragment {
     }
 
     @Override
+    public int getHelpResource() {
+        return R.string.help_url_connected_devices;
+    }
+
+    @Override
     protected int getPreferenceScreenResId() {
         return R.xml.connected_devices;
     }
 
     @Override
-    protected List<PreferenceController> getPreferenceControllers(Context context) {
-        final List<PreferenceController> controllers = new ArrayList<>();
-        final Lifecycle lifecycle = getLifecycle();
-        final NfcPreferenceController nfcPreferenceController =
-                new NfcPreferenceController(context);
-        lifecycle.addObserver(nfcPreferenceController);
-        controllers.add(nfcPreferenceController);
-        mUsbPrefController = new UsbModePreferenceController(context, new UsbBackend(context));
-        lifecycle.addObserver(mUsbPrefController);
-        controllers.add(mUsbPrefController);
-        final BluetoothMasterSwitchPreferenceController bluetoothPreferenceController =
-            new BluetoothMasterSwitchPreferenceController(
-                context, Utils.getLocalBtManager(context));
-        lifecycle.addObserver(bluetoothPreferenceController);
-        controllers.add(bluetoothPreferenceController);
+    protected List<AbstractPreferenceController> createPreferenceControllers(Context context) {
+        return buildPreferenceControllers(context, getLifecycle());
+    }
+
+    private static List<AbstractPreferenceController> buildPreferenceControllers(Context context,
+            Lifecycle lifecycle) {
+        final List<AbstractPreferenceController> controllers = new ArrayList<>();
+        final DiscoverableFooterPreferenceController discoverableFooterPreferenceController =
+                new DiscoverableFooterPreferenceController(context);
+        controllers.add(discoverableFooterPreferenceController);
+
+        if (lifecycle != null) {
+            lifecycle.addObserver(discoverableFooterPreferenceController);
+        }
+
         return controllers;
     }
+
+    @Override
+    public void onAttach(Context context) {
+        super.onAttach(context);
+        use(AvailableMediaDeviceGroupController.class).init(this);
+        use(ConnectedDeviceGroupController.class).init(this);
+        use(PreviouslyConnectedDevicePreferenceController.class).init(this);
+        use(DiscoverableFooterPreferenceController.class).init(this);
+    }
+
+    @VisibleForTesting
+    static class SummaryProvider implements SummaryLoader.SummaryProvider {
+
+        private final Context mContext;
+        private final SummaryLoader mSummaryLoader;
+
+        public SummaryProvider(Context context, SummaryLoader summaryLoader) {
+            mContext = context;
+            mSummaryLoader = summaryLoader;
+        }
+
+        @Override
+        public void setListening(boolean listening) {
+            if (listening) {
+                mSummaryLoader.setSummary(this, mContext.getText(AdvancedConnectedDeviceController.
+                        getConnectedDevicesSummaryResourceId(mContext)));
+            }
+        }
+    }
+
+    public static final SummaryLoader.SummaryProviderFactory SUMMARY_PROVIDER_FACTORY
+            = new SummaryLoader.SummaryProviderFactory() {
+        @Override
+        public SummaryLoader.SummaryProvider createSummaryProvider(Activity activity,
+                SummaryLoader summaryLoader) {
+            return new SummaryProvider(activity, summaryLoader);
+        }
+    };
 
     /**
      * For Search.
      */
-    public static final Indexable.SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
+    public static final SearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
             new BaseSearchIndexProvider() {
                 @Override
                 public List<SearchIndexableResource> getXmlResourcesToIndex(
@@ -88,15 +133,17 @@ public class ConnectedDeviceDashboardFragment extends DashboardFragment {
                 }
 
                 @Override
-                public List<String> getNonIndexableKeys(Context context) {
-                    PackageManager pm = context.getPackageManager();
-                    final List<String> keys = new ArrayList<String>();
+                public List<AbstractPreferenceController> createPreferenceControllers(Context
+                        context) {
+                    return buildPreferenceControllers(context, null /* lifecycle */);
+                }
 
-                    if (!pm.hasSystemFeature(PackageManager.FEATURE_NFC)) {
-                        keys.add(NfcPreferenceController.KEY_TOGGLE_NFC);
-                        keys.add(NfcPreferenceController.KEY_ANDROID_BEAM_SETTINGS);
-                    }
-                    keys.add(BluetoothMasterSwitchPreferenceController.KEY_TOGGLE_BLUETOOTH);
+                @Override
+                public List<String> getNonIndexableKeys(Context context) {
+                    List<String> keys = super.getNonIndexableKeys(context);
+                    // Disable because they show dynamic data
+                    keys.add(KEY_AVAILABLE_DEVICES);
+                    keys.add(KEY_CONNECTED_DEVICES);
                     return keys;
                 }
             };

@@ -14,7 +14,6 @@
 
 package com.android.settings.applications;
 
-import android.app.AppGlobals;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -22,6 +21,8 @@ import android.content.pm.UserInfo;
 import android.os.AsyncTask;
 import android.os.UserHandle;
 import android.os.UserManager;
+
+import com.android.settingslib.wrapper.PackageManagerWrapper;
 
 import java.util.List;
 

@@ -16,6 +16,8 @@
 
 package com.android.settings.applications;
 
+import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -35,12 +37,14 @@ import android.os.IBinder;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.os.UserManager;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.settings.SettingsActivity;
 import com.android.settings.SettingsPreferenceFragment;
-import com.android.settings.Utils;
+import com.android.settings.applications.manageapplications.ManageApplications;
+import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settingslib.RestrictedLockUtils;
@@ -48,8 +52,6 @@ import com.android.settingslib.applications.ApplicationsState;
 import com.android.settingslib.applications.ApplicationsState.AppEntry;
 
 import java.util.ArrayList;
-
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 public abstract class AppInfoBase extends SettingsPreferenceFragment
         implements ApplicationsState.Callbacks {
@@ -90,7 +92,7 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
         mApplicationFeatureProvider = FeatureFactory.getFactory(activity)
                 .getApplicationFeatureProvider(activity);
         mState = ApplicationsState.getInstance(activity.getApplication());
-        mSession = mState.newSession(this);
+        mSession = mState.newSession(this, getLifecycle());
         mDpm = (DevicePolicyManager) activity.getSystemService(Context.DEVICE_POLICY_SERVICE);
         mUserManager = (UserManager) activity.getSystemService(Context.USER_SERVICE);
         mPm = activity.getPackageManager();
@@ -104,7 +106,6 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
     @Override
     public void onResume() {
         super.onResume();
-        mSession.resume();
         mAppsControlDisallowedAdmin = RestrictedLockUtils.checkIfRestrictionEnforced(getActivity(),
                 UserManager.DISALLOW_APPS_CONTROL, mUserId);
         mAppsControlDisallowedBySystem = RestrictedLockUtils.hasBaseUserRestriction(getActivity(),
@@ -115,39 +116,37 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
         }
     }
 
-    @Override
-    public void onPause() {
-        mSession.pause();
-        super.onPause();
-    }
 
     @Override
     public void onDestroy() {
         stopListeningToPackageRemove();
-        mSession.release();
         super.onDestroy();
     }
 
     protected String retrieveAppEntry() {
         final Bundle args = getArguments();
         mPackageName = (args != null) ? args.getString(ARG_PACKAGE_NAME) : null;
+        Intent intent = (args == null) ?
+                getIntent() : (Intent) args.getParcelable("intent");
         if (mPackageName == null) {
-            Intent intent = (args == null) ?
-                    getActivity().getIntent() : (Intent) args.getParcelable("intent");
-            if (intent != null) {
+            if (intent != null && intent.getData() != null) {
                 mPackageName = intent.getData().getSchemeSpecificPart();
             }
         }
-        mUserId = UserHandle.myUserId();
+        if (intent != null && intent.hasExtra(Intent.EXTRA_USER_HANDLE)) {
+            mUserId = ((UserHandle) intent.getParcelableExtra(
+                    Intent.EXTRA_USER_HANDLE)).getIdentifier();
+        } else {
+            mUserId = UserHandle.myUserId();
+        }
         mAppEntry = mState.getEntry(mPackageName, mUserId);
         if (mAppEntry != null) {
             // Get application info again to refresh changed properties of application
             try {
-                mPackageInfo = mPm.getPackageInfo(mAppEntry.info.packageName,
+                mPackageInfo = mPm.getPackageInfoAsUser(mAppEntry.info.packageName,
                         PackageManager.MATCH_DISABLED_COMPONENTS |
-                        PackageManager.MATCH_ANY_USER |
-                        PackageManager.GET_SIGNATURES |
-                        PackageManager.GET_PERMISSIONS);
+                                PackageManager.GET_SIGNING_CERTIFICATES |
+                                PackageManager.GET_PERMISSIONS, mUserId);
             } catch (NameNotFoundException e) {
                 Log.e(TAG, "Exception when retrieving package:" + mAppEntry.info.packageName, e);
             }
@@ -160,11 +159,11 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
     }
 
     protected void setIntentAndFinish(boolean finish, boolean appChanged) {
-        if (localLOGV) Log.i(TAG, "appChanged="+appChanged);
+        if (localLOGV) Log.i(TAG, "appChanged=" + appChanged);
         Intent intent = new Intent();
         intent.putExtra(ManageApplications.APP_CHG, appChanged);
-        SettingsActivity sa = (SettingsActivity)getActivity();
-        sa.finishPreferencePanel(this, Activity.RESULT_OK, intent);
+        SettingsActivity sa = (SettingsActivity) getActivity();
+        sa.finishPreferencePanel(Activity.RESULT_OK, intent);
         mFinishing = true;
     }
 
@@ -175,6 +174,7 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
     }
 
     protected abstract boolean refreshUi();
+
     protected abstract AlertDialog createDialog(int id, int errorCode);
 
     @Override
@@ -214,25 +214,25 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
 
     @Override
     public void onPackageListChanged() {
-        refreshUi();
+        if (!refreshUi()) {
+            setIntentAndFinish(true, true);
+        }
     }
 
     public static void startAppInfoFragment(Class<?> fragment, int titleRes,
             String pkg, int uid, Fragment source, int request, int sourceMetricsCategory) {
-        startAppInfoFragment(fragment, titleRes, pkg, uid, source.getActivity(), request,
-                sourceMetricsCategory);
-    }
-
-    public static void startAppInfoFragment(Class<?> fragment, int titleRes,
-            String pkg, int uid, Activity source, int request, int sourceMetricsCategory) {
-        Bundle args = new Bundle();
+        final Bundle args = new Bundle();
         args.putString(AppInfoBase.ARG_PACKAGE_NAME, pkg);
         args.putInt(AppInfoBase.ARG_PACKAGE_UID, uid);
 
-        Intent intent = Utils.onBuildStartFragmentIntent(source, fragment.getName(),
-                args, null, titleRes, null, false, sourceMetricsCategory);
-        source.startActivityForResultAsUser(intent, request,
-                new UserHandle(UserHandle.getUserId(uid)));
+        new SubSettingLauncher(source.getContext())
+                .setDestination(fragment.getName())
+                .setSourceMetricsCategory(sourceMetricsCategory)
+                .setTitle(titleRes)
+                .setArguments(args)
+                .setUserHandle(new UserHandle(UserHandle.getUserId(uid)))
+                .setResultListener(source, request)
+                .launch();
     }
 
     public static class MyAlertDialogFragment extends InstrumentedDialogFragment {
@@ -291,7 +291,8 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
         @Override
         public void onReceive(Context context, Intent intent) {
             String packageName = intent.getData().getSchemeSpecificPart();
-            if (!mFinishing && mAppEntry.info.packageName.equals(packageName)) {
+            if (!mFinishing && (mAppEntry == null || mAppEntry.info == null
+                    || TextUtils.equals(mAppEntry.info.packageName, packageName))) {
                 onPackageRemoved();
             }
         }

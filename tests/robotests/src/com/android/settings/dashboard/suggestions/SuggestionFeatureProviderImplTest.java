@@ -16,17 +16,35 @@
 
 package com.android.settings.dashboard.suggestions;
 
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.when;
+
+import android.app.ActivityManager;
+import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.hardware.fingerprint.FingerprintManager;
+import android.provider.Settings.Secure;
+import android.service.settings.suggestions.Suggestion;
+import android.util.Pair;
 
 import com.android.internal.logging.nano.MetricsProto;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import com.android.settings.Settings.NightDisplaySuggestionActivity;
 import com.android.settings.testutils.FakeFeatureFactory;
-import com.android.settingslib.SuggestionParser;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settings.testutils.shadow.SettingsShadowResources;
+import com.android.settings.testutils.shadow.ShadowSecureSettings;
 import com.android.settingslib.drawer.Tile;
+import com.android.settingslib.suggestions.SuggestionControllerMixin;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -36,26 +54,26 @@ import org.mockito.MockitoAnnotations;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
-import static org.mockito.Mockito.when;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
+@Config(shadows = ShadowSecureSettings.class)
 public class SuggestionFeatureProviderImplTest {
 
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     private Context mContext;
     @Mock
-    private SuggestionParser mSuggestionParser;
+    private SuggestionControllerMixin mSuggestionControllerMixin;
     @Mock
-    private Tile mSuggestion;
+    private Suggestion mSuggestion;
+    @Mock
+    private ActivityManager mActivityManager;
+    @Mock
+    private PackageManager mPackageManager;
+    @Mock
+    private FingerprintManager mFingerprintManager;
 
     private FakeFeatureFactory mFactory;
     private SuggestionFeatureProviderImpl mProvider;
@@ -63,87 +81,99 @@ public class SuggestionFeatureProviderImplTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        FakeFeatureFactory.setupForTest(mContext);
-        mFactory = (FakeFeatureFactory) FakeFeatureFactory.getFactory(mContext);
+        mFactory = FakeFeatureFactory.setupForTest();
+        when(mContext.getPackageManager()).thenReturn(mPackageManager);
+        // Explicit casting to object due to MockitoCast bug
+        when((Object) mContext.getSystemService(FingerprintManager.class))
+                .thenReturn(mFingerprintManager);
+        when(mSuggestion.getId()).thenReturn("test_id");
         when(mContext.getApplicationContext()).thenReturn(RuntimeEnvironment.application);
-        mSuggestion.intent = new Intent().setClassName("pkg", "cls");
-        mSuggestion.category = "category";
+        when(mContext.getSystemService(Context.ACTIVITY_SERVICE)).thenReturn(mActivityManager);
+        when(mActivityManager.isLowRamDevice()).thenReturn(false);
 
         mProvider = new SuggestionFeatureProviderImpl(mContext);
     }
 
+    @After
+    public void tearDown() {
+        SettingsShadowResources.reset();
+    }
+
     @Test
-    public void dismissSuggestion_noParserOrSuggestion_noop() {
+    public void getSuggestionServiceComponentName_shouldReturnAndroidPackage() {
+        assertThat(mProvider.getSuggestionServiceComponent().getPackageName())
+                .isEqualTo("com.android.settings.intelligence");
+    }
+
+    @Test
+    public void isSuggestionEnabled_isLowMemoryDevice_shouldReturnFalse() {
+        when(mActivityManager.isLowRamDevice()).thenReturn(true);
+
+        assertThat(mProvider.isSuggestionEnabled(mContext)).isFalse();
+    }
+
+    @Test
+    public void isSuggestionV2Enabled_isNotLowMemoryDevice_shouldReturnTrue() {
+        when(mActivityManager.isLowRamDevice()).thenReturn(false);
+        assertThat(mProvider.isSuggestionEnabled(mContext)).isTrue();
+    }
+
+    @Test
+    public void dismissSuggestion_noControllerOrSuggestion_noop() {
         mProvider.dismissSuggestion(mContext, null, null);
-        mProvider.dismissSuggestion(mContext, mSuggestionParser, null);
-        mProvider.dismissSuggestion(mContext, null, mSuggestion);
+        mProvider.dismissSuggestion(mContext, mSuggestionControllerMixin, null);
+        mProvider.dismissSuggestion(mContext, null, new Suggestion.Builder("id").build());
 
         verifyZeroInteractions(mFactory.metricsFeatureProvider);
+        verifyZeroInteractions(mSuggestionControllerMixin);
     }
-
-    @Test
-    public void getSuggestionIdentifier_samePackage_returnClassName() {
-        final Tile suggestion = new Tile();
-        suggestion.intent = new Intent()
-                .setClassName(RuntimeEnvironment.application.getPackageName(), "123");
-        assertThat(mProvider.getSuggestionIdentifier(RuntimeEnvironment.application, suggestion))
-                .isEqualTo("123");
-    }
-
-    @Test
-    public void getSuggestionIdentifier_differentPackage_returnPackageName() {
-        final Tile suggestion = new Tile();
-        suggestion.intent = new Intent()
-                .setClassName(RuntimeEnvironment.application.getPackageName(), "123");
-        assertThat(mProvider.getSuggestionIdentifier(mContext, suggestion))
-                .isEqualTo(RuntimeEnvironment.application.getPackageName());
-    }
-
-    @Test
-    public void getSuggestionIdentifier_nullComponent_shouldNotCrash() {
-        final Tile suggestion = new Tile();
-        suggestion.intent = new Intent();
-        assertThat(mProvider.getSuggestionIdentifier(mContext, suggestion))
-                .isNotEmpty();
-    }
-
-    @Test
-    public void dismissSuggestion_hasMoreDismissCount_shouldNotDisableComponent() {
-        when(mSuggestionParser.dismissSuggestion(any(Tile.class), anyBoolean()))
-                .thenReturn(false);
-        mProvider.dismissSuggestion(mContext, mSuggestionParser, mSuggestion);
-
-        verify(mFactory.metricsFeatureProvider).action(
-                eq(mContext),
-                eq(MetricsProto.MetricsEvent.ACTION_SETTINGS_DISMISS_SUGGESTION),
-                anyString());
-        verify(mContext, never()).getPackageManager();
-    }
-
 
     @Test
     public void dismissSuggestion_noContext_shouldDoNothing() {
-        mProvider.dismissSuggestion(null, mSuggestionParser, mSuggestion);
+        mProvider.dismissSuggestion(null, mSuggestionControllerMixin, mSuggestion);
 
         verifyZeroInteractions(mFactory.metricsFeatureProvider);
     }
 
     @Test
-    public void dismissSuggestion_hasNoMoreDismissCount_shouldDisableComponent() {
-        when(mSuggestionParser.dismissSuggestion(any(Tile.class), anyBoolean()))
-                .thenReturn(true);
-
-        mProvider.dismissSuggestion(mContext, mSuggestionParser, mSuggestion);
+    public void dismissSuggestion_shouldLogAndDismiss() {
+        mProvider.dismissSuggestion(mContext, mSuggestionControllerMixin, mSuggestion);
 
         verify(mFactory.metricsFeatureProvider).action(
                 eq(mContext),
                 eq(MetricsProto.MetricsEvent.ACTION_SETTINGS_DISMISS_SUGGESTION),
                 anyString());
+        verify(mSuggestionControllerMixin).dismissSuggestion(mSuggestion);
+    }
 
-        verify(mContext.getPackageManager())
-                .setComponentEnabledSetting(mSuggestion.intent.getComponent(),
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                        PackageManager.DONT_KILL_APP);
-        verify(mSuggestionParser).markCategoryDone(mSuggestion.category);
+    @Test
+    public void filterExclusiveSuggestions_shouldOnlyKeepFirst3() {
+        final List<Tile> suggestions = new ArrayList<>();
+        suggestions.add(new Tile());
+        suggestions.add(new Tile());
+        suggestions.add(new Tile());
+        suggestions.add(new Tile());
+        suggestions.add(new Tile());
+        suggestions.add(new Tile());
+        suggestions.add(new Tile());
+
+        mProvider.filterExclusiveSuggestions(suggestions);
+
+        assertThat(suggestions).hasSize(3);
+    }
+
+    @Test
+    public void testGetSmartSuggestionEnabledTaggedData_disabled() {
+        assertThat(mProvider.getLoggingTaggedData(mContext)).asList().containsExactly(
+                Pair.create(MetricsEvent.FIELD_SETTINGS_SMART_SUGGESTIONS_ENABLED, 0));
+    }
+
+    @Test
+    public void testGetSmartSuggestionEnabledTaggedData_enabled() {
+        final SuggestionFeatureProvider provider = spy(mProvider);
+        when(provider.isSmartSuggestionEnabled(any(Context.class))).thenReturn(true);
+
+        assertThat(provider.getLoggingTaggedData(mContext)).asList().containsExactly(
+                Pair.create(MetricsEvent.FIELD_SETTINGS_SMART_SUGGESTIONS_ENABLED, 1));
     }
 }

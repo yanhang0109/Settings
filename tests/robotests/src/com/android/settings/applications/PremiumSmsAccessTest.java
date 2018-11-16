@@ -16,33 +16,25 @@
 
 package com.android.settings.applications;
 
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.verify;
+
 import android.content.Context;
 
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.internal.telephony.SmsUsageMonitor;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
 import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Answers;
-import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
-
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.verify;
+import org.robolectric.RuntimeEnvironment;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class PremiumSmsAccessTest {
-
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
-    private Context mContext;
 
     private FakeFeatureFactory mFeatureFactory;
     private PremiumSmsAccess mFragment;
@@ -50,27 +42,26 @@ public class PremiumSmsAccessTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        FakeFeatureFactory.setupForTest(mContext);
-        mFeatureFactory = (FakeFeatureFactory) FakeFeatureFactory.getFactory(mContext);
+        mFeatureFactory = FakeFeatureFactory.setupForTest();
         mFragment = new PremiumSmsAccess();
-        mFragment.onAttach(ShadowApplication.getInstance().getApplicationContext());
+        mFragment.onAttach(RuntimeEnvironment.application);
     }
 
     @Test
     public void logSpecialPermissionChange() {
         mFragment.logSpecialPermissionChange(SmsUsageMonitor.PREMIUM_SMS_PERMISSION_ASK_USER,
                 "app");
-        verify(mFeatureFactory.metricsFeatureProvider).action(any(Context.class),
+        verify(mFeatureFactory.metricsFeatureProvider).action(nullable(Context.class),
                 eq(MetricsProto.MetricsEvent.APP_SPECIAL_PERMISSION_PREMIUM_SMS_ASK), eq("app"));
 
         mFragment.logSpecialPermissionChange(SmsUsageMonitor.PREMIUM_SMS_PERMISSION_NEVER_ALLOW,
                 "app");
-        verify(mFeatureFactory.metricsFeatureProvider).action(any(Context.class),
+        verify(mFeatureFactory.metricsFeatureProvider).action(nullable(Context.class),
                 eq(MetricsProto.MetricsEvent.APP_SPECIAL_PERMISSION_PREMIUM_SMS_DENY), eq("app"));
 
         mFragment.logSpecialPermissionChange(SmsUsageMonitor.PREMIUM_SMS_PERMISSION_ALWAYS_ALLOW,
                 "app");
-        verify(mFeatureFactory.metricsFeatureProvider).action(any(Context.class),
+        verify(mFeatureFactory.metricsFeatureProvider).action(nullable(Context.class),
                 eq(MetricsProto.MetricsEvent.APP_SPECIAL_PERMISSION_PREMIUM_SMS_ALWAYS_ALLOW),
                 eq("app"));
     }

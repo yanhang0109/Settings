@@ -13,22 +13,25 @@
  */
 package com.android.settings.display;
 
+import static android.provider.Settings.System.SCREEN_OFF_TIMEOUT;
+
 import android.app.admin.DevicePolicyManager;
 import android.content.Context;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.provider.Settings;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.util.Log;
 
 import com.android.settings.R;
 import com.android.settings.TimeoutListPreference;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settingslib.RestrictedLockUtils;
+import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+import com.android.settingslib.core.AbstractPreferenceController;
 
-import static android.provider.Settings.System.SCREEN_OFF_TIMEOUT;
-
-public class TimeoutPreferenceController extends PreferenceController implements
-        Preference.OnPreferenceChangeListener {
+public class TimeoutPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin, Preference.OnPreferenceChangeListener {
 
     private static final String TAG = "TimeoutPrefContr";
 
@@ -58,16 +61,23 @@ public class TimeoutPreferenceController extends PreferenceController implements
         final long currentTimeout = Settings.System.getLong(mContext.getContentResolver(),
                 SCREEN_OFF_TIMEOUT, FALLBACK_SCREEN_TIMEOUT_VALUE);
         timeoutListPreference.setValue(String.valueOf(currentTimeout));
-        final DevicePolicyManager dpm = (DevicePolicyManager) mContext.getSystemService(
-                Context.DEVICE_POLICY_SERVICE);
+        final DevicePolicyManager dpm =
+                (DevicePolicyManager) mContext.getSystemService(Context.DEVICE_POLICY_SERVICE);
         if (dpm != null) {
             final RestrictedLockUtils.EnforcedAdmin admin =
                     RestrictedLockUtils.checkIfMaximumTimeToLockIsSet(mContext);
             final long maxTimeout =
-                    dpm.getMaximumTimeToLockForUserAndProfiles(UserHandle.myUserId());
+                    dpm.getMaximumTimeToLock(null /* admin */, UserHandle.myUserId());
             timeoutListPreference.removeUnusableTimeouts(maxTimeout, admin);
         }
         updateTimeoutPreferenceDescription(timeoutListPreference, currentTimeout);
+
+        EnforcedAdmin admin = RestrictedLockUtils.checkIfRestrictionEnforced(
+                        mContext, UserManager.DISALLOW_CONFIG_SCREEN_TIMEOUT,
+                        UserHandle.myUserId());
+        if(admin != null) {
+            timeoutListPreference.removeUnusableTimeouts(0/* disable all*/, admin);
+        }
     }
 
     @Override

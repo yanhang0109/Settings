@@ -16,25 +16,24 @@
 
 package com.android.settings.widget;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import android.os.Parcelable;
-import android.support.v4.view.PagerAdapter;
+import androidx.viewpager.widget.PagerAdapter;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.testutils.shadow.ShadowTextUtils;
-import java.util.Locale;
+
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.RuntimeEnvironment;
 
-import static com.google.common.truth.Truth.assertThat;
+import java.util.Locale;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class RtlCompatibleViewPagerTest {
 
     private Locale mLocaleEn;
@@ -43,15 +42,13 @@ public class RtlCompatibleViewPagerTest {
 
     @Before
     public void setUp() {
-        mViewPager = new RtlCompatibleViewPager(
-                ShadowApplication.getInstance().getApplicationContext());
+        mViewPager = new RtlCompatibleViewPager(RuntimeEnvironment.application);
         mViewPager.setAdapter(new ViewPagerAdapter());
         mLocaleEn = new Locale("en");
         mLocaleHe = new Locale("he");
     }
 
     @Test
-    @Config(shadows = {ShadowTextUtils.class})
     public void testGetCurrentItem_shouldMaintainIndexDuringLocaleChange() {
         testRtlCompatibleInner(0);
         testRtlCompatibleInner(1);

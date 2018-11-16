@@ -15,53 +15,43 @@
  */
 package com.android.settings.fuelgauge;
 
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.database.ContentObserver;
-import android.os.BatteryManager;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.util.Log;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+
 import com.android.settings.R;
 import com.android.settings.Utils;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnStart;
-import com.android.settings.core.lifecycle.events.OnStop;
+import com.android.settings.core.BasePreferenceController;
 import com.android.settings.dashboard.conditional.BatterySaverCondition;
 import com.android.settings.dashboard.conditional.ConditionManager;
-import com.android.settings.widget.MasterSwitchPreference;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnStart;
+import com.android.settingslib.core.lifecycle.events.OnStop;
 
-import static android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGING;
-
-public class BatterySaverController extends PreferenceController implements
-        Preference.OnPreferenceChangeListener, LifecycleObserver, OnStart, OnStop {
+public class BatterySaverController extends BasePreferenceController
+        implements LifecycleObserver, OnStart, OnStop, BatterySaverReceiver.BatterySaverListener {
     private static final String KEY_BATTERY_SAVER = "battery_saver_summary";
-    private static final String TAG = "BatterySaverController";
-    private static final boolean DEBUG = false;
-
-    private final BatteryStateChangeReceiver mBatteryStateChangeReceiver;
+    private final BatterySaverReceiver mBatteryStateChangeReceiver;
     private final PowerManager mPowerManager;
-    private MasterSwitchPreference mBatterySaverPref;
+    private Preference mBatterySaverPref;
 
-    public BatterySaverController(Context context, Lifecycle lifecycle) {
-        super(context);
+    public BatterySaverController(Context context) {
+        super(context, KEY_BATTERY_SAVER);
 
-        lifecycle.addObserver(this);
         mPowerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
-        mBatteryStateChangeReceiver = new BatteryStateChangeReceiver();
+        mBatteryStateChangeReceiver = new BatterySaverReceiver(context);
+        mBatteryStateChangeReceiver.setBatterySaverListener(this);
     }
 
     @Override
-    public boolean isAvailable() {
-        return true;
+    public int getAvailabilityStatus() {
+        return AVAILABLE;
     }
 
     @Override
@@ -72,27 +62,7 @@ public class BatterySaverController extends PreferenceController implements
     @Override
     public void displayPreference(PreferenceScreen screen) {
         super.displayPreference(screen);
-        mBatterySaverPref = (MasterSwitchPreference) screen.findPreference(KEY_BATTERY_SAVER);
-    }
-
-    @Override
-    public void updateState(Preference preference) {
-        mBatterySaverPref.setChecked(mPowerManager.isPowerSaveMode());
-        updateSummary();
-    }
-
-    @Override
-    public boolean onPreferenceChange(Preference preference, Object newValue) {
-        final boolean saverOn = (Boolean) newValue;
-        if (saverOn != mPowerManager.isPowerSaveMode()
-                && !mPowerManager.setPowerSaveMode(saverOn)) {
-            // Do nothing if power save mode doesn't set correctly
-            return false;
-        }
-
-        refreshConditionManager();
-        updateSummary();
-        return true;
+        mBatterySaverPref = screen.findPreference(KEY_BATTERY_SAVER);
     }
 
     @Override
@@ -102,6 +72,7 @@ public class BatterySaverController extends PreferenceController implements
                 , true, mObserver);
 
         mBatteryStateChangeReceiver.setListening(true);
+        updateSummary();
     }
 
     @Override
@@ -115,62 +86,39 @@ public class BatterySaverController extends PreferenceController implements
         ConditionManager.get(mContext).getCondition(BatterySaverCondition.class).refreshState();
     }
 
-    private void updateSummary() {
-        final boolean mode = mPowerManager.isPowerSaveMode();
-        final int format = mode ? R.string.battery_saver_on_summary
-                : R.string.battery_saver_off_summary;
+    @Override
+    public CharSequence getSummary() {
+        final boolean isPowerSaveOn = mPowerManager.isPowerSaveMode();
         final int percent = Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.LOW_POWER_MODE_TRIGGER_LEVEL, 0);
-        final int percentFormat = percent > 0 ? R.string.battery_saver_desc_turn_on_auto_pct
-                : R.string.battery_saver_desc_turn_on_auto_never;
-
-        final String summary = mContext.getString(format, mContext.getString(percentFormat,
-                Utils.formatPercentage(percent)));
-
-        mBatterySaverPref.setSummary(summary);
+        if (isPowerSaveOn) {
+            return mContext.getString(R.string.battery_saver_on_summary);
+        } else if (percent != 0) {
+            return mContext.getString(R.string.battery_saver_off_scheduled_summary,
+                    Utils.formatPercentage(percent));
+        } else {
+            return mContext.getString(R.string.battery_saver_off_summary);
+        }
     }
 
-    private final ContentObserver mObserver = new ContentObserver(new Handler()) {
+    private void updateSummary() {
+        mBatterySaverPref.setSummary(getSummary());
+    }
+
+    private final ContentObserver mObserver = new ContentObserver(
+            new Handler(Looper.getMainLooper())) {
         @Override
         public void onChange(boolean selfChange) {
             updateSummary();
         }
     };
 
-    private final class BatteryStateChangeReceiver extends BroadcastReceiver {
-        private boolean mRegistered;
+    @Override
+    public void onPowerSaveModeChanged() {
+        updateSummary();
+    }
 
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (DEBUG) {
-                Log.d(TAG, "Received " + intent.getAction());
-            }
-            final String action = intent.getAction();
-            if (action.equals(ACTION_POWER_SAVE_MODE_CHANGING)) {
-                mBatterySaverPref.setChecked(mPowerManager.isPowerSaveMode());
-                updateSummary();
-            } else if (action.equals(Intent.ACTION_BATTERY_CHANGED)) {
-                final int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-                // disable BSM switch if phone is plugged in or at 100% while plugged in
-                final boolean enabled = !(status == BatteryManager.BATTERY_STATUS_CHARGING
-                        || status == BatteryManager.BATTERY_STATUS_FULL);
-
-                mBatterySaverPref.setSwitchEnabled(enabled);
-            }
-        }
-
-        public void setListening(boolean listening) {
-            if (listening && !mRegistered) {
-                final IntentFilter ifilter = new IntentFilter();
-                ifilter.addAction(Intent.ACTION_BATTERY_CHANGED);
-                ifilter.addAction(ACTION_POWER_SAVE_MODE_CHANGING);
-                mContext.registerReceiver(this, ifilter);
-                mRegistered = true;
-            } else if (!listening && mRegistered) {
-                mContext.unregisterReceiver(this);
-                mRegistered = false;
-            }
-        }
-
+    @Override
+    public void onBatteryChanged(boolean pluggedIn) {
     }
 }

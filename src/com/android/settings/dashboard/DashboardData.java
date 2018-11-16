@@ -16,8 +16,10 @@
 package com.android.settings.dashboard;
 
 import android.annotation.IntDef;
-import android.support.annotation.Nullable;
-import android.support.v7.util.DiffUtil;
+import android.graphics.drawable.Drawable;
+import android.service.settings.suggestions.Suggestion;
+import androidx.annotation.VisibleForTesting;
+import androidx.recyclerview.widget.DiffUtil;
 import android.text.TextUtils;
 
 import com.android.settings.R;
@@ -38,34 +40,32 @@ import java.util.Objects;
  * ItemsData has inner class Item, which represents the Item in data list.
  */
 public class DashboardData {
-    public static final int SUGGESTION_MODE_DEFAULT = 0;
-    public static final int SUGGESTION_MODE_COLLAPSED = 1;
-    public static final int SUGGESTION_MODE_EXPANDED = 2;
     public static final int POSITION_NOT_FOUND = -1;
-    public static final int DEFAULT_SUGGESTION_COUNT = 2;
+    public static final int MAX_SUGGESTION_COUNT = 2;
 
-    // id namespace for different type of items.
-    private static final int NS_SPACER = 0;
-    private static final int NS_ITEMS = 2000;
-    private static final int NS_CONDITION = 3000;
+    // stable id for different type of items.
+    @VisibleForTesting
+    static final int STABLE_ID_SUGGESTION_CONTAINER = 0;
+    static final int STABLE_ID_SUGGESTION_CONDITION_DIVIDER = 1;
+    @VisibleForTesting
+    static final int STABLE_ID_CONDITION_HEADER = 2;
+    @VisibleForTesting
+    static final int STABLE_ID_CONDITION_FOOTER = 3;
+    @VisibleForTesting
+    static final int STABLE_ID_CONDITION_CONTAINER = 4;
 
     private final List<Item> mItems;
-    private final List<DashboardCategory> mCategories;
+    private final DashboardCategory mCategory;
     private final List<Condition> mConditions;
-    private final List<Tile> mSuggestions;
-    private final int mSuggestionMode;
-    private final Condition mExpandedCondition;
-    private int mId;
+    private final List<Suggestion> mSuggestions;
+    private final boolean mConditionExpanded;
 
     private DashboardData(Builder builder) {
-        mCategories = builder.mCategories;
+        mCategory = builder.mCategory;
         mConditions = builder.mConditions;
         mSuggestions = builder.mSuggestions;
-        mSuggestionMode = builder.mSuggestionMode;
-        mExpandedCondition = builder.mExpandedCondition;
-
+        mConditionExpanded = builder.mConditionExpanded;
         mItems = new ArrayList<>();
-        mId = 0;
 
         buildItemsData();
     }
@@ -99,24 +99,24 @@ public class DashboardData {
         return null;
     }
 
-    public List<DashboardCategory> getCategories() {
-        return mCategories;
+    public DashboardCategory getCategory() {
+        return mCategory;
     }
 
     public List<Condition> getConditions() {
         return mConditions;
     }
 
-    public List<Tile> getSuggestions() {
+    public List<Suggestion> getSuggestions() {
         return mSuggestions;
     }
 
-    public int getSuggestionMode() {
-        return mSuggestionMode;
+    public boolean hasSuggestion() {
+        return sizeOf(mSuggestions) > 0;
     }
 
-    public Condition getExpandedCondition() {
-        return mExpandedCondition;
+    public boolean isConditionExpanded() {
+        return mConditionExpanded;
     }
 
     /**
@@ -163,145 +163,117 @@ public class DashboardData {
     }
 
     /**
-     * Get the count of suggestions to display
+     * Add item into list when {@paramref add} is true.
      *
-     * The displayable count mainly depends on the {@link #mSuggestionMode}
-     * and the size of suggestions list.
-     *
-     * When in default mode, displayable count couldn't larger than
-     * {@link #DEFAULT_SUGGESTION_COUNT}.
-     *
-     * When in expanded mode, display all the suggestions.
-     *
-     * @return the count of suggestions to display
+     * @param item     maybe {@link Condition}, {@link Tile}, {@link DashboardCategory} or null
+     * @param type     type of the item, and value is the layout id
+     * @param stableId The stable id for this item
+     * @param add      flag about whether to add item into list
      */
-    public int getDisplayableSuggestionCount() {
-        final int suggestionSize = mSuggestions.size();
-        return mSuggestionMode == SUGGESTION_MODE_DEFAULT
-                ? Math.min(DEFAULT_SUGGESTION_COUNT, suggestionSize)
-                : mSuggestionMode == SUGGESTION_MODE_EXPANDED
-                        ? suggestionSize : 0;
-    }
-
-    public boolean hasMoreSuggestions() {
-        return mSuggestionMode == SUGGESTION_MODE_COLLAPSED
-                || (mSuggestionMode == SUGGESTION_MODE_DEFAULT
-                && mSuggestions.size() > DEFAULT_SUGGESTION_COUNT);
-    }
-
-    private void resetCount() {
-        mId = 0;
-    }
-
-    /**
-     * Count the item and add it into list when {@paramref add} is true.
-     *
-     * Note that {@link #mId} will increment automatically and the real
-     * id stored in {@link Item} is shifted by {@paramref nameSpace}. This is a
-     * simple way to keep the id stable.
-     *
-     * @param object    maybe {@link Condition}, {@link Tile}, {@link DashboardCategory} or null
-     * @param type      type of the item, and value is the layout id
-     * @param add       flag about whether to add item into list
-     * @param nameSpace namespace based on the type
-     */
-    private void countItem(Object object, int type, boolean add, int nameSpace) {
+    private void addToItemList(Object item, int type, int stableId, boolean add) {
         if (add) {
-            mItems.add(new Item(object, type, mId + nameSpace, object == mExpandedCondition));
+            mItems.add(new Item(item, type, stableId));
         }
-        mId++;
-    }
-
-    /**
-     * A special count item method for just suggestions. Id is calculated using suggestion hash
-     * instead of the position of suggestion in list. This is a more stable id than countItem.
-     */
-    private void countSuggestion(Tile tile, boolean add) {
-        if (add) {
-            mItems.add(new Item(tile, R.layout.suggestion_tile, Objects.hash(tile.title), false));
-        }
-        mId++;
     }
 
     /**
      * Build the mItems list using mConditions, mSuggestions, mCategories data
-     * and mIsShowingAll, mSuggestionMode flag.
+     * and mIsShowingAll, mConditionExpanded flag.
      */
     private void buildItemsData() {
-        boolean hasConditions = false;
-        for (int i = 0; mConditions != null && i < mConditions.size(); i++) {
-            boolean shouldShow = mConditions.get(i).shouldShow();
-            hasConditions |= shouldShow;
-            countItem(mConditions.get(i), R.layout.condition_card, shouldShow, NS_CONDITION);
-        }
+        final List<Condition> conditions = getConditionsToShow(mConditions);
+        final boolean hasConditions = sizeOf(conditions) > 0;
 
-        resetCount();
-        final boolean hasSuggestions = mSuggestions != null && mSuggestions.size() != 0;
-        countItem(null, R.layout.dashboard_spacer, hasConditions && hasSuggestions, NS_SPACER);
-        countItem(buildSuggestionHeaderData(), R.layout.suggestion_header, hasSuggestions,
-                NS_SPACER);
+        final List<Suggestion> suggestions = getSuggestionsToShow(mSuggestions);
+        final boolean hasSuggestions = sizeOf(suggestions) > 0;
 
-        resetCount();
-        if (mSuggestions != null) {
-            int maxSuggestions = getDisplayableSuggestionCount();
-            for (int i = 0; i < mSuggestions.size(); i++) {
-                countSuggestion(mSuggestions.get(i), i < maxSuggestions);
-            }
-        }
-        resetCount();
-        for (int i = 0; mCategories != null && i < mCategories.size(); i++) {
-            DashboardCategory category = mCategories.get(i);
-            countItem(category, R.layout.dashboard_category,
-                    !TextUtils.isEmpty(category.title), NS_ITEMS);
-            for (int j = 0; j < category.tiles.size(); j++) {
-                Tile tile = category.tiles.get(j);
-                countItem(tile, R.layout.dashboard_tile, true, NS_ITEMS);
+        /* Suggestion container. This is the card view that contains the list of suggestions.
+         * This will be added whenever the suggestion list is not empty */
+        addToItemList(suggestions, R.layout.suggestion_container,
+            STABLE_ID_SUGGESTION_CONTAINER, hasSuggestions);
+
+        /* Divider between suggestion and conditions if both are present. */
+        addToItemList(null /* item */, R.layout.horizontal_divider,
+            STABLE_ID_SUGGESTION_CONDITION_DIVIDER, hasSuggestions && hasConditions);
+
+        /* Condition header. This will be present when there is condition and it is collapsed */
+        addToItemList(new ConditionHeaderData(conditions),
+            R.layout.condition_header,
+            STABLE_ID_CONDITION_HEADER, hasConditions && !mConditionExpanded);
+
+        /* Condition container. This is the card view that contains the list of conditions.
+         * This will be added whenever the condition list is not empty and expanded */
+        addToItemList(conditions, R.layout.condition_container,
+            STABLE_ID_CONDITION_CONTAINER, hasConditions && mConditionExpanded);
+
+        /* Condition footer. This will be present when there is condition and it is expanded */
+        addToItemList(null /* item */, R.layout.condition_footer,
+            STABLE_ID_CONDITION_FOOTER, hasConditions && mConditionExpanded);
+
+        if (mCategory != null) {
+            final List<Tile> tiles = mCategory.getTiles();
+            for (int i = 0; i < tiles.size(); i++) {
+                final Tile tile = tiles.get(i);
+                addToItemList(tile, R.layout.dashboard_tile, Objects.hash(tile.title),
+                        true /* add */);
             }
         }
     }
 
-    private SuggestionHeaderData buildSuggestionHeaderData() {
-        SuggestionHeaderData data;
-        if (mSuggestions == null) {
-            data = new SuggestionHeaderData();
-        } else {
-            final boolean hasMoreSuggestions = hasMoreSuggestions();
-            final int suggestionSize = mSuggestions.size();
-            final int undisplayedSuggestionCount = suggestionSize - getDisplayableSuggestionCount();
-            data = new SuggestionHeaderData(hasMoreSuggestions, suggestionSize,
-                    undisplayedSuggestionCount);
-        }
+    private static int sizeOf(List<?> list) {
+        return list == null ? 0 : list.size();
+    }
 
-        return data;
+    private List<Condition> getConditionsToShow(List<Condition> conditions) {
+        if (conditions == null) {
+            return null;
+        }
+        List<Condition> result = new ArrayList<>();
+        final int size = conditions == null ? 0 : conditions.size();
+        for (int i = 0; i < size; i++) {
+            final Condition condition = conditions.get(i);
+            if (condition.shouldShow()) {
+                result.add(condition);
+            }
+        }
+        return result;
+    }
+
+    private List<Suggestion> getSuggestionsToShow(List<Suggestion> suggestions) {
+        if (suggestions == null) {
+            return null;
+        }
+        if (suggestions.size() <= MAX_SUGGESTION_COUNT) {
+            return suggestions;
+        }
+        final List<Suggestion> suggestionsToShow = new ArrayList<>(MAX_SUGGESTION_COUNT);
+        for (int i = 0; i < MAX_SUGGESTION_COUNT; i++) {
+            suggestionsToShow.add(suggestions.get(i));
+        }
+        return suggestionsToShow;
     }
 
     /**
      * Builder used to build the ItemsData
-     * <p>
-     * {@link #mExpandedCondition} and {@link #mSuggestionMode} have default value
-     * while others are not.
      */
     public static class Builder {
-        private int mSuggestionMode = SUGGESTION_MODE_DEFAULT;
-        private Condition mExpandedCondition = null;
-
-        private List<DashboardCategory> mCategories;
+        private DashboardCategory mCategory;
         private List<Condition> mConditions;
-        private List<Tile> mSuggestions;
+        private List<Suggestion> mSuggestions;
+        private boolean mConditionExpanded;
 
         public Builder() {
         }
 
         public Builder(DashboardData dashboardData) {
-            mCategories = dashboardData.mCategories;
+            mCategory = dashboardData.mCategory;
             mConditions = dashboardData.mConditions;
             mSuggestions = dashboardData.mSuggestions;
-            mSuggestionMode = dashboardData.mSuggestionMode;
-            mExpandedCondition = dashboardData.mExpandedCondition;
+            mConditionExpanded = dashboardData.mConditionExpanded;
         }
 
-        public Builder setCategories(List<DashboardCategory> categories) {
-            this.mCategories = categories;
+        public Builder setCategory(DashboardCategory category) {
+            this.mCategory = category;
             return this;
         }
 
@@ -310,18 +282,13 @@ public class DashboardData {
             return this;
         }
 
-        public Builder setSuggestions(List<Tile> suggestions) {
+        public Builder setSuggestions(List<Suggestion> suggestions) {
             this.mSuggestions = suggestions;
             return this;
         }
 
-        public Builder setSuggestionMode(int suggestionMode) {
-            this.mSuggestionMode = suggestionMode;
-            return this;
-        }
-
-        public Builder setExpandedCondition(Condition expandedCondition) {
-            this.mExpandedCondition = expandedCondition;
+        public Builder setConditionExpanded(boolean expanded) {
+            this.mConditionExpanded = expanded;
             return this;
         }
 
@@ -363,36 +330,33 @@ public class DashboardData {
             return mOldItems.get(oldItemPosition).equals(mNewItems.get(newItemPosition));
         }
 
-        @Nullable
-        @Override
-        public Object getChangePayload(int oldItemPosition, int newItemPosition) {
-            if (mOldItems.get(oldItemPosition).type == Item.TYPE_CONDITION_CARD) {
-                return "condition"; // return anything but null to mark the payload
-            }
-            return null;
-        }
     }
 
     /**
      * An item contains the data needed in the DashboardData.
      */
-    private static class Item {
+    static class Item {
         // valid types in field type
-        private static final int TYPE_DASHBOARD_CATEGORY = R.layout.dashboard_category;
         private static final int TYPE_DASHBOARD_TILE = R.layout.dashboard_tile;
-        private static final int TYPE_SUGGESTION_HEADER = R.layout.suggestion_header;
-        private static final int TYPE_SUGGESTION_TILE = R.layout.suggestion_tile;
-        private static final int TYPE_CONDITION_CARD = R.layout.condition_card;
-        private static final int TYPE_DASHBOARD_SPACER = R.layout.dashboard_spacer;
+        private static final int TYPE_SUGGESTION_CONTAINER =
+            R.layout.suggestion_container;
+        private static final int TYPE_CONDITION_CONTAINER =
+            R.layout.condition_container;
+        private static final int TYPE_CONDITION_HEADER =
+            R.layout.condition_header;
+        private static final int TYPE_CONDITION_FOOTER =
+            R.layout.condition_footer;
+        private static final int TYPE_SUGGESTION_CONDITION_DIVIDER = R.layout.horizontal_divider;
 
-        @IntDef({TYPE_DASHBOARD_CATEGORY, TYPE_DASHBOARD_TILE, TYPE_SUGGESTION_HEADER,
-                TYPE_SUGGESTION_TILE, TYPE_CONDITION_CARD, TYPE_DASHBOARD_SPACER})
+        @IntDef({TYPE_DASHBOARD_TILE, TYPE_SUGGESTION_CONTAINER, TYPE_CONDITION_CONTAINER,
+            TYPE_CONDITION_HEADER, TYPE_CONDITION_FOOTER, TYPE_SUGGESTION_CONDITION_DIVIDER})
         @Retention(RetentionPolicy.SOURCE)
-        public @interface ItemTypes{}
+        public @interface ItemTypes {
+        }
 
         /**
-         * The main data object in item, usually is a {@link Tile}, {@link Condition} or
-         * {@link DashboardCategory} object. This object can also be null when the
+         * The main data object in item, usually is a {@link Tile}, {@link Condition}
+         * object. This object can also be null when the
          * item is an divider line. Please refer to {@link #buildItemsData()} for
          * detail usage of the Item.
          */
@@ -401,28 +365,23 @@ public class DashboardData {
         /**
          * The type of item, value inside is the layout id(e.g. R.layout.dashboard_tile)
          */
-        public final @ItemTypes int type;
+        @ItemTypes
+        public final int type;
 
         /**
          * Id of this item, used in the {@link ItemsDataDiffCallback} to identify the same item.
          */
         public final int id;
 
-        /**
-         * To store whether the condition is expanded, useless when {@link #type} is not
-         * {@link #TYPE_CONDITION_CARD}
-         */
-        public final boolean conditionExpanded;
-
-        public Item(Object entity, @ItemTypes int type, int id, boolean conditionExpanded) {
+        public Item(Object entity, @ItemTypes int type, int id) {
             this.entity = entity;
             this.type = type;
             this.id = id;
-            this.conditionExpanded = conditionExpanded;
         }
 
         /**
          * Override it to make comparision in the {@link ItemsDataDiffCallback}
+         *
          * @param obj object to compared with
          * @return true if the same object or has equal value.
          */
@@ -442,23 +401,25 @@ public class DashboardData {
             }
 
             switch (type) {
-                case TYPE_DASHBOARD_CATEGORY:
-                    // Only check title for dashboard category
-                    return TextUtils.equals(((DashboardCategory) entity).title,
-                            ((DashboardCategory) targetItem.entity).title);
                 case TYPE_DASHBOARD_TILE:
                     final Tile localTile = (Tile) entity;
                     final Tile targetTile = (Tile) targetItem.entity;
 
                     // Only check title and summary for dashboard tile
                     return TextUtils.equals(localTile.title, targetTile.title)
-                            && TextUtils.equals(localTile.summary, targetTile.summary);
-                case TYPE_CONDITION_CARD:
-                    // First check conditionExpanded for quick return
-                    if (conditionExpanded != targetItem.conditionExpanded) {
-                        return false;
+                        && TextUtils.equals(localTile.summary, targetTile.summary);
+                case TYPE_SUGGESTION_CONTAINER:
+                case TYPE_CONDITION_CONTAINER:
+                    // If entity is suggestion and contains remote view, force refresh
+                    final List entities = (List) entity;
+                    if (!entities.isEmpty()) {
+                        Object firstEntity = entities.get(0);
+                        if (firstEntity instanceof Tile
+                                && ((Tile) firstEntity).remoteViews != null) {
+                            return false;
+                        }
                     }
-                    // After that, go to default to do final check
+                    // Otherwise Fall through to default
                 default:
                     return entity == null ? targetItem.entity == null
                             : entity.equals(targetItem.entity);
@@ -467,42 +428,22 @@ public class DashboardData {
     }
 
     /**
-     * This class contains the data needed to build the header. The data can also be
-     * used to check the diff in DiffUtil.Callback
+     * This class contains the data needed to build the suggestion/condition header. The data can
+     * also be used to check the diff in DiffUtil.Callback
      */
-    public static class SuggestionHeaderData {
-        public final boolean hasMoreSuggestions;
-        public final int suggestionSize;
-        public final int undisplayedSuggestionCount;
+    public static class ConditionHeaderData {
+        public final List<Drawable> conditionIcons;
+        public final CharSequence title;
+        public final int conditionCount;
 
-        public SuggestionHeaderData(boolean moreSuggestions, int suggestionSize, int
-                undisplayedSuggestionCount) {
-            this.hasMoreSuggestions = moreSuggestions;
-            this.suggestionSize = suggestionSize;
-            this.undisplayedSuggestionCount = undisplayedSuggestionCount;
-        }
-
-        public SuggestionHeaderData() {
-            hasMoreSuggestions = false;
-            suggestionSize = 0;
-            undisplayedSuggestionCount = 0;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
+        public ConditionHeaderData(List<Condition> conditions) {
+            conditionCount = sizeOf(conditions);
+            title = conditionCount > 0 ? conditions.get(0).getTitle() : null;
+            conditionIcons = new ArrayList<>();
+            for (int i = 0; conditions != null && i < conditions.size(); i++) {
+                final Condition condition = conditions.get(i);
+                conditionIcons.add(condition.getIcon());
             }
-
-            if (!(obj instanceof SuggestionHeaderData)) {
-                return false;
-            }
-
-            SuggestionHeaderData targetData = (SuggestionHeaderData) obj;
-
-            return hasMoreSuggestions == targetData.hasMoreSuggestions
-                    && suggestionSize == targetData.suggestionSize
-                    && undisplayedSuggestionCount == targetData.undisplayedSuggestionCount;
         }
     }
 

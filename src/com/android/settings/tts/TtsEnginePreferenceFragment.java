@@ -5,7 +5,7 @@ import com.android.settings.R;
 import android.os.Bundle;
 import com.android.settings.SettingsPreferenceFragment;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import android.support.v7.preference.PreferenceCategory;
+import androidx.preference.PreferenceCategory;
 import android.speech.tts.TtsEngines;
 import android.speech.tts.TextToSpeech.EngineInfo;
 import com.android.settings.SettingsActivity;
@@ -23,7 +23,7 @@ import java.util.Arrays;
 
 public class TtsEnginePreferenceFragment extends SettingsPreferenceFragment //implements
         implements RadioButtonGroupState, Indexable {
-    private static final String TAG = "TtsEnginePreferenceFragment";
+    private static final String TAG = "TtsEnginePrefFragment";
 
     private static final int VOICE_DATA_INTEGRITY_CHECK = 1977;
 
@@ -185,7 +185,6 @@ public class TtsEnginePreferenceFragment extends SettingsPreferenceFragment //im
                 @Override
                 public List<SearchIndexableResource> getXmlResourcesToIndex(
                         Context context, boolean enabled) {
-                    Log.i(TAG, "Indexing");
                     final SearchIndexableResource sir = new SearchIndexableResource(context);
                     sir.xmlResId = R.xml.tts_engine_picker;
                     return Arrays.asList(sir);

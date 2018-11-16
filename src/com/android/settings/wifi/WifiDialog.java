@@ -27,7 +27,7 @@ import com.android.settings.R;
 import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.wifi.AccessPoint;
 
-class WifiDialog extends AlertDialog implements WifiConfigUiBase, DialogInterface.OnClickListener {
+public class WifiDialog extends AlertDialog implements WifiConfigUiBase, DialogInterface.OnClickListener {
 
     public interface WifiDialogListener {
         void onForget(WifiDialog dialog);
@@ -45,19 +45,31 @@ class WifiDialog extends AlertDialog implements WifiConfigUiBase, DialogInterfac
     private WifiConfigController mController;
     private boolean mHideSubmitButton;
 
-    public WifiDialog(Context context, WifiDialogListener listener, AccessPoint accessPoint,
-            int mode, boolean hideSubmitButton) {
-        this(context, listener, accessPoint, mode);
-        mHideSubmitButton = hideSubmitButton;
+
+    /** Creates a WifiDialog with fullscreen style. It displays in fullscreen mode. */
+    public static WifiDialog createFullscreen(Context context, WifiDialogListener listener,
+            AccessPoint accessPoint, int mode) {
+        return new WifiDialog(context, listener, accessPoint, mode,
+                R.style.Theme_Settings_NoActionBar, false /* hideSubmitButton */);
     }
 
-    public WifiDialog(Context context, WifiDialogListener listener, AccessPoint accessPoint,
-            int mode) {
-        super(context);
+    /**
+     * Creates a WifiDialog with no additional style. It displays as a dialog above the current
+     * view.
+     */
+    public static WifiDialog createModal(Context context, WifiDialogListener listener,
+            AccessPoint accessPoint, int mode) {
+        return new WifiDialog(context, listener, accessPoint, mode, 0 /* style */,
+                mode == WifiConfigUiBase.MODE_VIEW /* hideSubmitButton*/);
+    }
+
+    /* package */ WifiDialog(Context context, WifiDialogListener listener, AccessPoint accessPoint,
+        int mode, int style, boolean hideSubmitButton) {
+        super(context, style);
         mMode = mode;
         mListener = listener;
         mAccessPoint = accessPoint;
-        mHideSubmitButton = false;
+        mHideSubmitButton = hideSubmitButton;
     }
 
     @Override
@@ -107,8 +119,7 @@ class WifiDialog extends AlertDialog implements WifiConfigUiBase, DialogInterfac
                     mListener.onSubmit(this);
                     break;
                 case BUTTON_FORGET:
-                    if (WifiSettings.isEditabilityLockedDown(
-                            getContext(), mAccessPoint.getConfig())) {
+                    if (WifiUtils.isNetworkLockedDown(getContext(), mAccessPoint.getConfig())) {
                         RestrictedLockUtils.sendShowAdminSupportDetailsIntent(getContext(),
                                 RestrictedLockUtils.getDeviceOwner(getContext()));
                         return;

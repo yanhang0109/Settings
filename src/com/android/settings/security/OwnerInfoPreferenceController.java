@@ -18,22 +18,24 @@ package com.android.settings.security;
 import android.app.Fragment;
 import android.content.Context;
 import android.os.UserHandle;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceClickListener;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceClickListener;
+import androidx.preference.PreferenceScreen;
+
 import com.android.internal.widget.LockPatternUtils;
-import com.android.settings.OwnerInfoSettings;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settings.users.OwnerInfoSettings;
 import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 import com.android.settingslib.RestrictedPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
-public class OwnerInfoPreferenceController extends PreferenceController
-        implements LifecycleObserver, OnResume {
+public class OwnerInfoPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, LifecycleObserver, OnResume {
 
     private static final String KEY_OWNER_INFO = "owner_info_settings";
     private static final int MY_USER_ID = UserHandle.myUserId();
@@ -44,7 +46,7 @@ public class OwnerInfoPreferenceController extends PreferenceController
 
     // Container fragment should implement this in order to show the correct summary
     public interface OwnerInfoCallback {
-        public void onOwnerInfoUpdated();
+        void onOwnerInfoUpdated();
     }
 
     public OwnerInfoPreferenceController(Context context, Fragment parent, Lifecycle lifecycle ) {

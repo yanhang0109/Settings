@@ -8,57 +8,79 @@ import android.content.Context;
 import android.content.Intent;
 import android.database.ContentObserver;
 import android.net.NetworkScoreManager;
-
 import android.net.NetworkScorerAppData;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.support.annotation.VisibleForTesting;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.text.TextUtils;
 
-import com.android.settings.network.NetworkScoreManagerWrapper;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.R;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
+
+import java.util.List;
 
 /**
- * {@link PreferenceController} that controls whether a user wants to enable the "use open networks
- * automatically" feature provider by the current network recommendation provider.
+ * {@link AbstractPreferenceController} that controls whether a user wants to enable the "use open
+ * networks automatically" feature provider by the current network recommendation provider.
  */
-public class UseOpenWifiPreferenceController extends PreferenceController
-        implements Preference.OnPreferenceChangeListener, LifecycleObserver, OnResume, OnPause {
+public class UseOpenWifiPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, Preference.OnPreferenceChangeListener,
+        LifecycleObserver, OnResume, OnPause {
+    public static final int REQUEST_CODE_OPEN_WIFI_AUTOMATICALLY = 400;
+
     private static final String KEY_USE_OPEN_WIFI_AUTOMATICALLY = "use_open_wifi_automatically";
-    @VisibleForTesting static final int REQUEST_CODE_OPEN_WIFI_AUTOMATICALLY = 400;
 
     private final ContentResolver mContentResolver;
     private final Fragment mFragment;
-    private final NetworkScoreManagerWrapper mNetworkScoreManagerWrapper;
+    private final NetworkScoreManager mNetworkScoreManager;
     private final SettingObserver mSettingObserver;
 
     private Preference mPreference;
     private ComponentName mEnableUseWifiComponentName;
+    private boolean mDoFeatureSupportedScorersExist;
 
     public UseOpenWifiPreferenceController(Context context, Fragment fragment,
-            NetworkScoreManagerWrapper networkScoreManagerWrapper, Lifecycle lifecycle) {
+            Lifecycle lifecycle) {
         super(context);
         mContentResolver = context.getContentResolver();
         mFragment = fragment;
-        mNetworkScoreManagerWrapper = networkScoreManagerWrapper;
+        mNetworkScoreManager =
+                (NetworkScoreManager) context.getSystemService(Context.NETWORK_SCORE_SERVICE);
         mSettingObserver = new SettingObserver();
         updateEnableUseWifiComponentName();
+        checkForFeatureSupportedScorers();
         lifecycle.addObserver(this);
     }
 
     private void updateEnableUseWifiComponentName() {
-        NetworkScorerAppData appData = mNetworkScoreManagerWrapper.getActiveScorer();
+        NetworkScorerAppData appData = mNetworkScoreManager.getActiveScorer();
         mEnableUseWifiComponentName =
                 appData == null ? null : appData.getEnableUseOpenWifiActivity();
+    }
+
+    private void checkForFeatureSupportedScorers() {
+        if (mEnableUseWifiComponentName != null) {
+            mDoFeatureSupportedScorersExist = true;
+            return;
+        }
+        List<NetworkScorerAppData> scorers = mNetworkScoreManager.getAllValidScorers();
+        for (NetworkScorerAppData scorer : scorers) {
+            if (scorer.getEnableUseOpenWifiActivity() != null) {
+                mDoFeatureSupportedScorersExist = true;
+                return;
+            }
+        }
+        mDoFeatureSupportedScorersExist = false;
     }
 
     @Override
@@ -79,7 +101,7 @@ public class UseOpenWifiPreferenceController extends PreferenceController
 
     @Override
     public boolean isAvailable() {
-        return mEnableUseWifiComponentName != null;
+        return mDoFeatureSupportedScorersExist;
     }
 
     @Override
@@ -93,8 +115,23 @@ public class UseOpenWifiPreferenceController extends PreferenceController
             return;
         }
         final SwitchPreference useOpenWifiPreference = (SwitchPreference) preference;
-        useOpenWifiPreference.setVisible(isAvailable());
+
+        boolean isScorerSet = mNetworkScoreManager.getActiveScorerPackage() != null;
+        boolean doesActiveScorerSupportFeature = mEnableUseWifiComponentName != null;
+
         useOpenWifiPreference.setChecked(isSettingEnabled());
+        useOpenWifiPreference.setVisible(isAvailable());
+        useOpenWifiPreference.setEnabled(isScorerSet && doesActiveScorerSupportFeature);
+
+        if (!isScorerSet) {
+            useOpenWifiPreference.setSummary(
+                    R.string.use_open_wifi_automatically_summary_scoring_disabled);
+        } else if (!doesActiveScorerSupportFeature) {
+            useOpenWifiPreference.setSummary(
+                    R.string.use_open_wifi_automatically_summary_scorer_unsupported_disabled);
+        } else {
+            useOpenWifiPreference.setSummary(R.string.use_open_wifi_automatically_summary);
+        }
     }
 
     @Override

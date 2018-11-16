@@ -21,7 +21,8 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.support.annotation.VisibleForTesting;
+import android.provider.Settings;
+import androidx.annotation.VisibleForTesting;
 import android.widget.Toast;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
@@ -45,16 +46,16 @@ public final class Utils {
 
     public static int getConnectionStateSummary(int connectionState) {
         switch (connectionState) {
-        case BluetoothProfile.STATE_CONNECTED:
-            return R.string.bluetooth_connected;
-        case BluetoothProfile.STATE_CONNECTING:
-            return R.string.bluetooth_connecting;
-        case BluetoothProfile.STATE_DISCONNECTED:
-            return R.string.bluetooth_disconnected;
-        case BluetoothProfile.STATE_DISCONNECTING:
-            return R.string.bluetooth_disconnecting;
-        default:
-            return 0;
+            case BluetoothProfile.STATE_CONNECTED:
+                return R.string.bluetooth_connected;
+            case BluetoothProfile.STATE_CONNECTING:
+                return R.string.bluetooth_connecting;
+            case BluetoothProfile.STATE_DISCONNECTED:
+                return R.string.bluetooth_disconnected;
+            case BluetoothProfile.STATE_DISCONNECTING:
+                return R.string.bluetooth_disconnecting;
+            default:
+                return 0;
         }
     }
 
@@ -141,4 +142,9 @@ public final class Utils {
             com.android.settingslib.bluetooth.Utils.setErrorListener(mErrorListener);
         }
     };
+
+    public static boolean isBluetoothScanningEnabled(Context context) {
+        return Settings.Global.getInt(context.getContentResolver(),
+                Settings.Global.BLE_SCAN_ALWAYS_AVAILABLE, 0) == 1;
+    }
 }

@@ -21,8 +21,8 @@ import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.storage.StorageManager;
 import android.provider.Settings;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceViewHolder;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceViewHolder;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextPaint;
@@ -39,6 +39,7 @@ import com.android.settings.R;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.widget.DonutView;
 
+import java.text.NumberFormat;
 import java.util.Locale;
 
 /**
@@ -46,7 +47,7 @@ import java.util.Locale;
  * on a given storage volume. It is visualized with a donut graphing the % used.
  */
 public class StorageSummaryDonutPreference extends Preference implements View.OnClickListener {
-    private int mPercent = -1;
+    private double mPercent = -1;
 
     public StorageSummaryDonutPreference(Context context) {
         this(context, null);
@@ -64,13 +65,14 @@ public class StorageSummaryDonutPreference extends Preference implements View.On
             return;
         }
 
-        mPercent = MathUtils.constrain((int) ((usedBytes * 100) / totalBytes),
-                (usedBytes > 0) ? 1 : 0, 100);
+        mPercent = usedBytes / (double) totalBytes;
     }
 
     @Override
     public void onBindViewHolder(PreferenceViewHolder view) {
         super.onBindViewHolder(view);
+        view.itemView.setClickable(false);
+
         final DonutView donut = (DonutView) view.findViewById(R.id.donut);
         if (donut != null) {
             donut.setPercentage(mPercent);

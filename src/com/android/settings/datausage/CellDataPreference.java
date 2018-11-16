@@ -25,8 +25,9 @@ import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.provider.Settings.Global;
-import android.support.v4.content.res.TypedArrayUtils;
-import android.support.v7.preference.PreferenceViewHolder;
+import androidx.annotation.VisibleForTesting;
+import androidx.core.content.res.TypedArrayUtils;
+import androidx.preference.PreferenceViewHolder;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -36,10 +37,10 @@ import android.view.View;
 import android.widget.Checkable;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import com.android.settings.CustomDialogPreference;
 import com.android.settings.R;
 import com.android.settings.Utils;
 import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.CustomDialogPreference;
 
 import java.util.List;
 
@@ -51,11 +52,12 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
     public boolean mChecked;
     public boolean mMultiSimDialog;
     private TelephonyManager mTelephonyManager;
-    private SubscriptionManager mSubscriptionManager;
+    @VisibleForTesting
+    SubscriptionManager mSubscriptionManager;
 
     public CellDataPreference(Context context, AttributeSet attrs) {
         super(context, attrs, TypedArrayUtils.getAttr(context,
-                android.support.v7.preference.R.attr.switchPreferenceStyle,
+                androidx.preference.R.attr.switchPreferenceStyle,
                 android.R.attr.switchPreferenceStyle));
     }
 
@@ -85,12 +87,19 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
     @Override
     public void onAttached() {
         super.onAttached();
-        mListener.setListener(true, mSubId, getContext());
+        mDataStateListener.setListener(true, mSubId, getContext());
+        if (mSubscriptionManager!= null) {
+            mSubscriptionManager.addOnSubscriptionsChangedListener(mOnSubscriptionsChangeListener);
+        }
     }
 
     @Override
     public void onDetached() {
-        mListener.setListener(false, mSubId, getContext());
+        mDataStateListener.setListener(false, mSubId, getContext());
+        if (mSubscriptionManager!= null) {
+            mSubscriptionManager.removeOnSubscriptionsChangedListener(
+                    mOnSubscriptionsChangeListener);
+        }
         super.onDetached();
     }
 
@@ -101,15 +110,25 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
         }
         mSubscriptionManager = SubscriptionManager.from(getContext());
         mTelephonyManager = TelephonyManager.from(getContext());
+
+        mSubscriptionManager.addOnSubscriptionsChangedListener(mOnSubscriptionsChangeListener);
+
         if (mSubId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
             mSubId = subId;
             setKey(getKey() + subId);
         }
+        updateEnabled();
         updateChecked();
     }
 
     private void updateChecked() {
         setChecked(mTelephonyManager.getDataEnabled(mSubId));
+    }
+
+    private void updateEnabled() {
+        // If this subscription is not active, for example, SIM card is taken out, we disable
+        // the button.
+        setEnabled(mSubscriptionManager.getActiveSubscriptionInfo(mSubId) != null);
     }
 
     @Override
@@ -237,7 +256,19 @@ public class CellDataPreference extends CustomDialogPreference implements Templa
         }
     }
 
-    private final DataStateListener mListener = new DataStateListener() {
+    @VisibleForTesting
+    final SubscriptionManager.OnSubscriptionsChangedListener mOnSubscriptionsChangeListener
+            = new SubscriptionManager.OnSubscriptionsChangedListener() {
+        @Override
+        public void onSubscriptionsChanged() {
+            if (DataUsageSummary.LOGD) {
+                Log.d(TAG, "onSubscriptionsChanged");
+            }
+            updateEnabled();
+        }
+    };
+
+    private final DataStateListener mDataStateListener = new DataStateListener() {
         @Override
         public void onChange(boolean selfChange) {
             updateChecked();

@@ -18,17 +18,19 @@ package com.android.settings.wifi;
 
 import android.content.Context;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 import android.text.TextUtils;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 /**
- * {@link PreferenceController} that controls whether we should fall back to celluar when wifi is
- * bad.
+ * {@link AbstractPreferenceController} that controls whether we should fall back to celluar when
+ * wifi is bad.
  */
-public class CellularFallbackPreferenceController extends PreferenceController {
+public class CellularFallbackPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     private static final String KEY_CELLULAR_FALLBACK = "wifi_cellular_data_fallback";
 

@@ -18,14 +18,15 @@ package com.android.settings.datetime;
 
 import android.content.Context;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 
-import com.android.settings.Utils;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.Utils;
+import com.android.settingslib.core.AbstractPreferenceController;
 
-public class AutoTimeZonePreferenceController extends PreferenceController
-        implements Preference.OnPreferenceChangeListener {
+public class AutoTimeZonePreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, Preference.OnPreferenceChangeListener {
 
     private static final String KEY_AUTO_TIME_ZONE = "auto_zone";
 

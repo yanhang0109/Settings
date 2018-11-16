@@ -17,30 +17,25 @@
 package com.android.settings.wifi;
 
 import static android.provider.Settings.Global.WIFI_NETWORKS_AVAILABLE_NOTIFICATION_ON;
-
 import static com.google.common.truth.Truth.assertThat;
-
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import android.content.Context;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.core.lifecycle.Lifecycle;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settingslib.core.lifecycle.Lifecycle;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.annotation.Config;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class NotifyOpenNetworkPreferenceControllerTest {
 
     private Context mContext;

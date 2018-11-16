@@ -15,26 +15,33 @@
  */
 package com.android.settings.testutils;
 
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 
+import com.android.settings.accounts.AccountFeatureProvider;
 import com.android.settings.applications.ApplicationFeatureProvider;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.settings.bluetooth.BluetoothFeatureProvider;
 import com.android.settings.dashboard.DashboardFeatureProvider;
 import com.android.settings.dashboard.suggestions.SuggestionFeatureProvider;
 import com.android.settings.enterprise.EnterprisePrivacyFeatureProvider;
 import com.android.settings.fuelgauge.PowerUsageFeatureProvider;
 import com.android.settings.gestures.AssistGestureFeatureProvider;
 import com.android.settings.localepicker.LocaleFeatureProvider;
+import com.android.settings.overlay.DockUpdaterFeatureProvider;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.overlay.SupportFeatureProvider;
-import com.android.settings.security.SecurityFeatureProvider;
-import com.android.settings.search2.SearchFeatureProvider;
 import com.android.settings.overlay.SurveyFeatureProvider;
+import com.android.settings.search.DeviceIndexFeatureProvider;
+import com.android.settings.search.SearchFeatureProvider;
+import com.android.settings.security.SecurityFeatureProvider;
+import com.android.settings.slices.SlicesFeatureProvider;
 import com.android.settings.users.UserFeatureProvider;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
 
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import org.mockito.Answers;
 
 /**
  * Test util to provide fake FeatureFactory. To use this factory, call {@code setupForTest} in
@@ -46,22 +53,27 @@ public class FakeFeatureFactory extends FeatureFactory {
     public final MetricsFeatureProvider metricsFeatureProvider;
     public final PowerUsageFeatureProvider powerUsageFeatureProvider;
     public final DashboardFeatureProvider dashboardFeatureProvider;
+    public final DockUpdaterFeatureProvider dockUpdaterFeatureProvider;
     public final LocaleFeatureProvider localeFeatureProvider;
     public final ApplicationFeatureProvider applicationFeatureProvider;
     public final EnterprisePrivacyFeatureProvider enterprisePrivacyFeatureProvider;
-    public final SearchFeatureProvider searchFeatureProvider;
     public final SurveyFeatureProvider surveyFeatureProvider;
     public final SecurityFeatureProvider securityFeatureProvider;
     public final SuggestionFeatureProvider suggestionsFeatureProvider;
     public final UserFeatureProvider userFeatureProvider;
     public final AssistGestureFeatureProvider assistGestureFeatureProvider;
+    public final BluetoothFeatureProvider bluetoothFeatureProvider;
+    public final AccountFeatureProvider mAccountFeatureProvider;
+    public final DeviceIndexFeatureProvider deviceIndexFeatureProvider;
+
+    public SlicesFeatureProvider slicesFeatureProvider;
+    public SearchFeatureProvider searchFeatureProvider;
 
     /**
      * Call this in {@code @Before} method of the test class to use fake factory.
-     *
-     * @param context The context must be a deep mock.
      */
-    public static void setupForTest(Context context) {
+    public static FakeFeatureFactory setupForTest() {
+        final Context context = mock(Context.class, Answers.RETURNS_DEEP_STUBS);
         sFactory = null;
         when(context.getString(com.android.settings.R.string.config_featureFactory))
                 .thenReturn(FakeFeatureFactory.class.getName());
@@ -71,6 +83,7 @@ public class FakeFeatureFactory extends FeatureFactory {
         } catch (ClassNotFoundException e) {
             // Ignore.
         }
+        return (FakeFeatureFactory) FakeFeatureFactory.getFactory(context);
     }
 
     /**
@@ -81,6 +94,7 @@ public class FakeFeatureFactory extends FeatureFactory {
         metricsFeatureProvider = mock(MetricsFeatureProvider.class);
         powerUsageFeatureProvider = mock(PowerUsageFeatureProvider.class);
         dashboardFeatureProvider = mock(DashboardFeatureProvider.class);
+        dockUpdaterFeatureProvider = mock(DockUpdaterFeatureProvider.class);
         localeFeatureProvider = mock(LocaleFeatureProvider.class);
         applicationFeatureProvider = mock(ApplicationFeatureProvider.class);
         enterprisePrivacyFeatureProvider = mock(EnterprisePrivacyFeatureProvider.class);
@@ -90,6 +104,10 @@ public class FakeFeatureFactory extends FeatureFactory {
         suggestionsFeatureProvider = mock(SuggestionFeatureProvider.class);
         userFeatureProvider = mock(UserFeatureProvider.class);
         assistGestureFeatureProvider = mock(AssistGestureFeatureProvider.class);
+        bluetoothFeatureProvider = mock(BluetoothFeatureProvider.class);
+        slicesFeatureProvider = mock(SlicesFeatureProvider.class);
+        mAccountFeatureProvider = mock(AccountFeatureProvider.class);
+        deviceIndexFeatureProvider = mock(DeviceIndexFeatureProvider.class);
     }
 
     @Override
@@ -115,6 +133,11 @@ public class FakeFeatureFactory extends FeatureFactory {
     @Override
     public DashboardFeatureProvider getDashboardFeatureProvider(Context context) {
         return dashboardFeatureProvider;
+    }
+
+    @Override
+    public DockUpdaterFeatureProvider getDockUpdaterFeatureProvider() {
+        return dockUpdaterFeatureProvider;
     }
 
     @Override
@@ -153,7 +176,27 @@ public class FakeFeatureFactory extends FeatureFactory {
     }
 
     @Override
+    public BluetoothFeatureProvider getBluetoothFeatureProvider(Context context) {
+        return bluetoothFeatureProvider;
+    }
+
+    @Override
     public AssistGestureFeatureProvider getAssistGestureFeatureProvider() {
         return assistGestureFeatureProvider;
+    }
+
+    @Override
+    public SlicesFeatureProvider getSlicesFeatureProvider() {
+        return slicesFeatureProvider;
+    }
+
+    @Override
+    public AccountFeatureProvider getAccountFeatureProvider() {
+        return mAccountFeatureProvider;
+    }
+
+    @Override
+    public DeviceIndexFeatureProvider getDeviceIndexFeatureProvider() {
+        return deviceIndexFeatureProvider;
     }
 }

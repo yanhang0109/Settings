@@ -18,20 +18,22 @@ package com.android.settings.inputmethod;
 
 import android.content.Context;
 import android.hardware.input.InputManager;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settings.inputmethod.PhysicalKeyboardFragment.HardKeyboardDeviceInfo;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.Lifecycle;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
 import java.util.List;
 
-public class PhysicalKeyboardPreferenceController extends PreferenceController implements
-        LifecycleObserver, OnResume, OnPause, InputManager.InputDeviceListener {
+public class PhysicalKeyboardPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, LifecycleObserver, OnResume, OnPause,
+        InputManager.InputDeviceListener {
 
     private final InputManager mIm;
 
@@ -48,7 +50,7 @@ public class PhysicalKeyboardPreferenceController extends PreferenceController i
 
     @Override
     public boolean isAvailable() {
-        return true;
+        return mContext.getResources().getBoolean(R.bool.config_show_physical_keyboard_pref);
     }
 
     @Override
@@ -64,12 +66,12 @@ public class PhysicalKeyboardPreferenceController extends PreferenceController i
 
     @Override
     public void onPause() {
-        mIm.registerInputDeviceListener(this, null);
+        mIm.unregisterInputDeviceListener(this);
     }
 
     @Override
     public void onResume() {
-        mIm.unregisterInputDeviceListener(this);
+        mIm.registerInputDeviceListener(this, null);
     }
 
     @Override
@@ -92,7 +94,7 @@ public class PhysicalKeyboardPreferenceController extends PreferenceController i
             return;
         }
         final List<HardKeyboardDeviceInfo> keyboards =
-                PhysicalKeyboardFragment.getHardKeyboards();
+                PhysicalKeyboardFragment.getHardKeyboards(mContext);
         if (keyboards.isEmpty()) {
             mPreference.setSummary(R.string.disconnected);
             return;

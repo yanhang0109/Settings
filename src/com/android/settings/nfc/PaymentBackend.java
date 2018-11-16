@@ -42,7 +42,7 @@ public class PaymentBackend {
     }
 
     public static class PaymentAppInfo {
-        CharSequence label;
+        public CharSequence label;
         CharSequence description;
         Drawable banner;
         boolean isDefault;
@@ -73,6 +73,7 @@ public class PaymentBackend {
 
     public void onResume() {
         mSettingsPackageMonitor.register(mContext, mContext.getMainLooper(), false);
+        refresh();
     }
 
     public void refresh() {

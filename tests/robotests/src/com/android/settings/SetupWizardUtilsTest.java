@@ -16,20 +16,19 @@
 
 package com.android.settings;
 
-import android.content.Intent;
+import static com.android.settings.testutils.ResIdSubject.assertResId;
+import static com.google.common.truth.Truth.assertThat;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
+import android.content.Intent;
+import android.os.SystemProperties;
+
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 import com.android.setupwizardlib.util.WizardManagerHelper;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.annotation.Config;
-
-import static com.google.common.truth.Truth.assertThat;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class SetupWizardUtilsTest {
 
     @Test
@@ -44,5 +43,35 @@ public class SetupWizardUtilsTest {
         assertThat(theme).isEqualTo(toIntent.getStringExtra(WizardManagerHelper.EXTRA_THEME));
         assertThat(toIntent.getBooleanExtra(WizardManagerHelper.EXTRA_USE_IMMERSIVE_MODE, false))
                 .isTrue();
+    }
+
+    @Test
+    public void testGetTheme_withIntentExtra_shouldReturnExtraTheme() {
+        SystemProperties.set(SetupWizardUtils.SYSTEM_PROP_SETUPWIZARD_THEME,
+                WizardManagerHelper.THEME_GLIF);
+        Intent intent = new Intent();
+        intent.putExtra(WizardManagerHelper.EXTRA_THEME, WizardManagerHelper.THEME_GLIF_V2);
+
+        assertResId(SetupWizardUtils.getTheme(intent)).isEqualTo(R.style.GlifV2Theme);
+    }
+
+    @Test
+    public void testGetTheme_withEmptyIntent_shouldReturnSystemProperty() {
+        SystemProperties.set(SetupWizardUtils.SYSTEM_PROP_SETUPWIZARD_THEME,
+                WizardManagerHelper.THEME_GLIF_V2_LIGHT);
+        Intent intent = new Intent();
+
+        assertResId(SetupWizardUtils.getTheme(intent)).isEqualTo(R.style.GlifV2Theme_Light);
+    }
+
+    @Test
+    public void testGetTheme_glifV3Light_shouldReturnThemeResource() {
+        SystemProperties.set(SetupWizardUtils.SYSTEM_PROP_SETUPWIZARD_THEME,
+                WizardManagerHelper.THEME_GLIF_V3_LIGHT);
+        Intent intent = new Intent();
+
+        assertResId(SetupWizardUtils.getTheme(intent)).isEqualTo(R.style.GlifV3Theme_Light);
+        assertResId(SetupWizardUtils.getTransparentTheme(intent))
+                .isEqualTo(R.style.GlifV3Theme_Light_Transparent);
     }
 }

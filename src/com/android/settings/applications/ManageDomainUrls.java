@@ -23,13 +23,14 @@ import android.os.Bundle;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.provider.Settings.Global;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceChangeListener;
-import android.support.v7.preference.Preference.OnPreferenceClickListener;
-import android.support.v7.preference.PreferenceCategory;
-import android.support.v7.preference.PreferenceGroup;
-import android.support.v7.preference.PreferenceViewHolder;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceChangeListener;
+import androidx.preference.Preference.OnPreferenceClickListener;
+import androidx.preference.PreferenceCategory;
+import androidx.preference.PreferenceGroup;
+import androidx.preference.PreferenceViewHolder;
 import android.util.ArraySet;
 import android.view.View;
 
@@ -37,6 +38,7 @@ import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.Utils;
+import com.android.settings.widget.AppPreference;
 import com.android.settingslib.applications.ApplicationsState;
 import com.android.settingslib.applications.ApplicationsState.AppEntry;
 
@@ -63,34 +65,20 @@ public class ManageDomainUrls extends SettingsPreferenceFragment
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
         setAnimationAllowed(true);
-        setPreferenceScreen(getPreferenceManager().createPreferenceScreen(getContext()));
         mApplicationsState = ApplicationsState.getInstance(
                 (Application) getContext().getApplicationContext());
-        mSession = mApplicationsState.newSession(this);
+        mSession = mApplicationsState.newSession(this, getLifecycle());
         setHasOptionsMenu(true);
+    }
+
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.manage_domain_url_settings;
     }
 
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        mSession.resume();
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        mSession.pause();
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        mSession.release();
     }
 
     @Override
@@ -141,7 +129,7 @@ public class ManageDomainUrls extends SettingsPreferenceFragment
                     final Intent launchIntent = instantAppSettingsIntent;
                     // TODO: Make this button actually launch the account chooser.
                     mInstantAppAccountPreference = new Preference(getPrefContext());
-                    mInstantAppAccountPreference.setTitle(R.string.instant_apps_account);
+                    mInstantAppAccountPreference.setTitle(R.string.instant_apps_settings);
                     mInstantAppAccountPreference.setOnPreferenceClickListener(pref -> {
                         startActivity(launchIntent);
                         return true;
@@ -186,7 +174,7 @@ public class ManageDomainUrls extends SettingsPreferenceFragment
             String key = entry.info.packageName + "|" + entry.info.uid;
             DomainAppPreference preference = (DomainAppPreference) getCachedPreference(key);
             if (preference == null) {
-                preference = new DomainAppPreference(getPrefContext(), entry);
+                preference = new DomainAppPreference(getPrefContext(), mApplicationsState, entry);
                 preference.setKey(key);
                 preference.setOnPreferenceClickListener(this);
                 group.addPreference(preference);
@@ -236,12 +224,16 @@ public class ManageDomainUrls extends SettingsPreferenceFragment
         return false;
     }
 
-    private class DomainAppPreference extends Preference {
+    @VisibleForTesting
+    static class DomainAppPreference extends AppPreference {
         private final AppEntry mEntry;
         private final PackageManager mPm;
+        private final ApplicationsState mApplicationsState;
 
-        public DomainAppPreference(final Context context, AppEntry entry) {
+        public DomainAppPreference(final Context context, ApplicationsState applicationsState,
+                AppEntry entry) {
             super(context);
+            mApplicationsState = applicationsState;
             mPm = context.getPackageManager();
             mEntry = entry;
             mEntry.ensureLabel(getContext());

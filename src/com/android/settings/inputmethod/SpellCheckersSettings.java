@@ -21,10 +21,11 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceChangeListener;
-import android.support.v7.preference.Preference.OnPreferenceClickListener;
-import android.support.v7.preference.PreferenceScreen;
+import android.provider.Settings;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceChangeListener;
+import androidx.preference.Preference.OnPreferenceClickListener;
+import androidx.preference.PreferenceScreen;
 import android.util.Log;
 import android.view.textservice.SpellCheckerInfo;
 import android.view.textservice.SpellCheckerSubtype;
@@ -91,7 +92,10 @@ public class SpellCheckersSettings extends SettingsPreferenceFragment
     @Override
     public void onResume() {
         super.onResume();
-        mSwitchBar = ((SettingsActivity)getActivity()).getSwitchBar();
+        mSwitchBar = ((SettingsActivity) getActivity()).getSwitchBar();
+        mSwitchBar.setSwitchBarText(
+                R.string.spell_checker_master_switch_title,
+                R.string.spell_checker_master_switch_title);
         mSwitchBar.show();
         mSwitchBar.addOnSwitchChangeListener(this);
         updatePreferenceScreen();
@@ -105,7 +109,8 @@ public class SpellCheckersSettings extends SettingsPreferenceFragment
 
     @Override
     public void onSwitchChanged(final Switch switchView, final boolean isChecked) {
-        mTsm.setSpellCheckerEnabled(isChecked);
+        Settings.Secure.putInt(getContentResolver(), Settings.Secure.SPELL_CHECKER_ENABLED,
+                isChecked ? 1 : 0);
         updatePreferenceScreen();
     }
 
@@ -129,7 +134,7 @@ public class SpellCheckersSettings extends SettingsPreferenceFragment
             final Preference preference = screen.getPreference(index);
             preference.setEnabled(isSpellCheckerEnabled);
             if (preference instanceof SpellCheckerPreference) {
-                final SpellCheckerPreference pref = (SpellCheckerPreference)preference;
+                final SpellCheckerPreference pref = (SpellCheckerPreference) preference;
                 pref.setSelected(mCurrentSci);
             }
         }
@@ -171,8 +176,13 @@ public class SpellCheckersSettings extends SettingsPreferenceFragment
         }
     }
 
-    private static int convertSubtypeIndexToDialogItemId(final int index) { return index + 1; }
-    private static int convertDialogItemIdToSubtypeIndex(final int item) { return item - 1; }
+    private static int convertSubtypeIndexToDialogItemId(final int index) {
+        return index + 1;
+    }
+
+    private static int convertDialogItemIdToSubtypeIndex(final int item) {
+        return item - 1;
+    }
 
     private void showChooseLanguageDialog() {
         if (mDialog != null && mDialog.isShowing()) {
@@ -189,7 +199,7 @@ public class SpellCheckersSettings extends SettingsPreferenceFragment
         final AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
         builder.setTitle(R.string.phone_language);
         final int subtypeCount = currentSci.getSubtypeCount();
-        final CharSequence[] items = new CharSequence[subtypeCount + 1 /* default */ ];
+        final CharSequence[] items = new CharSequence[subtypeCount + 1 /* default */];
         items[ITEM_ID_USE_SYSTEM_LANGUAGE] = getSpellCheckerSubtypeLabel(currentSci, null);
         int checkedItemId = ITEM_ID_USE_SYSTEM_LANGUAGE;
         for (int index = 0; index < subtypeCount; ++index) {
@@ -203,12 +213,17 @@ public class SpellCheckersSettings extends SettingsPreferenceFragment
         builder.setSingleChoiceItems(items, checkedItemId, new AlertDialog.OnClickListener() {
             @Override
             public void onClick(final DialogInterface dialog, final int item) {
+                final int subtypeId;
                 if (item == ITEM_ID_USE_SYSTEM_LANGUAGE) {
-                    mTsm.setSpellCheckerSubtype(null);
+                    subtypeId = SpellCheckerSubtype.SUBTYPE_ID_NONE;
                 } else {
                     final int index = convertDialogItemIdToSubtypeIndex(item);
-                    mTsm.setSpellCheckerSubtype(currentSci.getSubtypeAt(index));
+                    subtypeId = currentSci.getSubtypeAt(index).hashCode();
                 }
+
+                Settings.Secure.putInt(getContentResolver(),
+                        Settings.Secure.SELECTED_SPELL_CHECKER_SUBTYPE, subtypeId);
+
                 if (DBG) {
                     final SpellCheckerSubtype subtype = mTsm.getCurrentSpellCheckerSubtype(
                             true /* allowImplicitlySelectedSubtype */);
@@ -248,7 +263,11 @@ public class SpellCheckersSettings extends SettingsPreferenceFragment
     }
 
     private void changeCurrentSpellChecker(final SpellCheckerInfo sci) {
-        mTsm.setCurrentSpellChecker(sci);
+        Settings.Secure.putString(getContentResolver(), Settings.Secure.SELECTED_SPELL_CHECKER,
+                sci.getId());
+        // Reset the spell checker subtype
+        Settings.Secure.putInt(getContentResolver(), Settings.Secure.SELECTED_SPELL_CHECKER_SUBTYPE,
+                SpellCheckerSubtype.SUBTYPE_ID_NONE);
         if (DBG) {
             Log.d(TAG, "Current spell check is " + mTsm.getCurrentSpellChecker().getId());
         }

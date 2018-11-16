@@ -23,33 +23,34 @@ import android.net.IConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.Settings;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import android.provider.SettingsSlicesContract;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.util.Log;
 import android.util.SparseArray;
 
 import com.android.internal.net.LegacyVpnInfo;
 import com.android.internal.net.VpnConfig;
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnPause;
-import com.android.settings.core.lifecycle.events.OnResume;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settingslib.RestrictedLockUtils;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
+import com.android.settingslib.utils.ThreadUtils;
 
 import java.util.List;
 
 
-public class VpnPreferenceController extends PreferenceController implements LifecycleObserver,
-        OnResume, OnPause {
+public class VpnPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, LifecycleObserver, OnResume, OnPause {
 
     private static final String KEY_VPN_SETTINGS = "vpn_settings";
     private static final NetworkRequest REQUEST = new NetworkRequest.Builder()
@@ -83,7 +84,7 @@ public class VpnPreferenceController extends PreferenceController implements Lif
         // Manually set dependencies for Wifi when not toggleable.
         if (mToggleable == null || !mToggleable.contains(Settings.Global.RADIO_WIFI)) {
             if (mPreference != null) {
-                mPreference.setDependency(AirplaneModePreferenceController.KEY_TOGGLE_AIRPLANE);
+                mPreference.setDependency(SettingsSlicesContract.KEY_AIRPLANE_MODE);
             }
         }
     }
@@ -156,12 +157,13 @@ public class VpnPreferenceController extends PreferenceController implements Lif
         } else {
             summary = getNameForVpnConfig(vpn, UserHandle.of(uid));
         }
-        new Handler(Looper.getMainLooper()).post(() -> mPreference.setSummary(summary));
+        ThreadUtils.postOnMainThread(() -> mPreference.setSummary(summary));
     }
 
-    private String getNameForVpnConfig(VpnConfig cfg, UserHandle user) {
+    @VisibleForTesting
+    String getNameForVpnConfig(VpnConfig cfg, UserHandle user) {
         if (cfg.legacy) {
-            return mContext.getString(R.string.bluetooth_connected);
+            return mContext.getString(R.string.wifi_display_status_connected);
         }
         // The package name for an active VPN is stored in the 'user' field of its VpnConfig
         final String vpnPackage = cfg.user;
@@ -180,13 +182,11 @@ public class VpnPreferenceController extends PreferenceController implements Lif
             mNetworkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(Network network) {
-            Log.d(TAG, "onAvailable " + network.netId);
             updateSummary();
         }
 
         @Override
         public void onLost(Network network) {
-            Log.d(TAG, "onLost " + network.netId);
             updateSummary();
         }
     };

@@ -1,2 +1,2 @@
 com.android.settings.display.ScreenZoomPreferenceFragmentForSetupWizard
-com.android.settings.print.PrintServiceSettingsFragment
+com.android.settings.search.indexing.FakeSettingsFragment

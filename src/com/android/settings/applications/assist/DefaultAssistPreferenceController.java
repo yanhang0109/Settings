@@ -23,27 +23,34 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.service.voice.VoiceInteractionService;
 import android.service.voice.VoiceInteractionServiceInfo;
+import androidx.annotation.VisibleForTesting;
 
-import android.support.annotation.VisibleForTesting;
 import com.android.internal.app.AssistUtils;
-import com.android.settings.applications.defaultapps.DefaultAppInfo;
+import com.android.settings.R;
 import com.android.settings.applications.defaultapps.DefaultAppPreferenceController;
+import com.android.settingslib.applications.DefaultAppInfo;
 
 import java.util.List;
 
 public class DefaultAssistPreferenceController extends DefaultAppPreferenceController {
 
-    private static final String KEY_DEFAULT_ASSIST = "default_assist";
+    private final AssistUtils mAssistUtils;
+    private final boolean mShowSetting;
+    private final String mPrefKey;
 
-    private AssistUtils mAssistUtils;
-
-    public DefaultAssistPreferenceController(Context context) {
+    public DefaultAssistPreferenceController(Context context, String prefKey,
+            boolean showSetting) {
         super(context);
+        mPrefKey = prefKey;
+        mShowSetting = showSetting;
         mAssistUtils = new AssistUtils(context);
     }
 
     @Override
     protected Intent getSettingIntent(DefaultAppInfo info) {
+        if (!mShowSetting) {
+            return null;
+        }
         final ComponentName cn = mAssistUtils.getAssistComponentForUser(mUserId);
         if (cn == null) {
             return null;
@@ -67,12 +74,12 @@ public class DefaultAssistPreferenceController extends DefaultAppPreferenceContr
 
     @Override
     public boolean isAvailable() {
-        return true;
+        return mContext.getResources().getBoolean(R.bool.config_show_assist_and_voice_input);
     }
 
     @Override
     public String getPreferenceKey() {
-        return KEY_DEFAULT_ASSIST;
+        return mPrefKey;
     }
 
     @Override
@@ -81,7 +88,7 @@ public class DefaultAssistPreferenceController extends DefaultAppPreferenceContr
         if (cn == null) {
             return null;
         }
-        return new DefaultAppInfo(mPackageManager, mUserId, cn);
+        return new DefaultAppInfo(mContext, mPackageManager, mUserId, cn);
     }
 
     @VisibleForTesting

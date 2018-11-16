@@ -18,13 +18,15 @@ package com.android.settings.deviceinfo;
 import android.app.Fragment;
 import android.content.Context;
 import android.content.Intent;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.text.TextUtils;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settingslib.DeviceInfoUtils;
+import com.android.settingslib.core.AbstractPreferenceController;
 
-public class FeedbackPreferenceController extends PreferenceController {
+public class FeedbackPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin {
     private static final String KEY_DEVICE_FEEDBACK = "device_feedback";
 
     private final Fragment mHost;
@@ -36,6 +38,7 @@ public class FeedbackPreferenceController extends PreferenceController {
         intent = new Intent("android.intent.action.BUG_REPORT");
     }
 
+    @Override
     public boolean isAvailable() {
         return !TextUtils.isEmpty(DeviceInfoUtils.getFeedbackReporterPackage(mContext));
     }
@@ -45,6 +48,15 @@ public class FeedbackPreferenceController extends PreferenceController {
         super.updateState(preference);
         intent.setPackage(DeviceInfoUtils.getFeedbackReporterPackage(mContext));
         preference.setIntent(intent);
+
+        // In some cases, cannot retrieve the report package from package manager,
+        // For example, launched from lock screen.
+        // Update this preference visibility after updateState.
+        if (isAvailable() && !preference.isVisible()) {
+            preference.setVisible(true);
+        } else if (!isAvailable() && preference.isVisible()){
+            preference.setVisible(false);
+        }
     }
 
     public String getPreferenceKey() {

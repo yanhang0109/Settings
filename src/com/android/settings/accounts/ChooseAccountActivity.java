@@ -33,8 +33,8 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceGroup;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceGroup;
 import android.util.Log;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
@@ -44,10 +44,10 @@ import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.Utils;
 import com.android.settings.enterprise.EnterprisePrivacyFeatureProvider;
 import com.android.settings.overlay.FeatureFactory;
-import com.android.settings.widget.FooterPreference;
-import com.android.settings.widget.FooterPreferenceMixin;
 import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+import com.android.settingslib.widget.FooterPreference;
+import com.android.settingslib.widget.FooterPreferenceMixin;
 
 import com.google.android.collect.Maps;
 

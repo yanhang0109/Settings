@@ -20,17 +20,19 @@ import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.TimePickerDialog;
 import android.content.Context;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.widget.TimePicker;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.RestrictedPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.Calendar;
 
-public class TimePreferenceController extends PreferenceController implements
-        TimePickerDialog.OnTimeSetListener {
+public class TimePreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, TimePickerDialog.OnTimeSetListener {
 
     public interface TimePreferenceHost extends UpdateTimeAndDateCallback {
         void showTimePicker();
@@ -59,9 +61,14 @@ public class TimePreferenceController extends PreferenceController implements
 
     @Override
     public void updateState(Preference preference) {
+        if (!(preference instanceof RestrictedPreference)) {
+            return;
+        }
         final Calendar now = Calendar.getInstance();
         preference.setSummary(DateFormat.getTimeFormat(mContext).format(now.getTime()));
-        preference.setEnabled(!mAutoTimePreferenceController.isEnabled());
+        if (!((RestrictedPreference) preference).isDisabledByAdmin()) {
+            preference.setEnabled(!mAutoTimePreferenceController.isEnabled());
+        }
     }
 
     @Override

@@ -14,76 +14,83 @@
 package com.android.settings.display;
 
 import android.content.Context;
-import android.content.res.Configuration;
-import android.support.v7.preference.DropDownPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
+import android.text.TextUtils;
 
 import com.android.internal.logging.nano.MetricsProto;
 import com.android.internal.view.RotationPolicy;
-import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settings.core.TogglePreferenceController;
 import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnPause;
+import com.android.settingslib.core.lifecycle.events.OnResume;
 
-public class AutoRotatePreferenceController extends PreferenceController implements
-        Preference.OnPreferenceChangeListener {
+public class AutoRotatePreferenceController extends TogglePreferenceController implements
+        PreferenceControllerMixin, Preference.OnPreferenceChangeListener, LifecycleObserver,
+        OnResume, OnPause {
 
-    private static final String KEY_AUTO_ROTATE = "auto_rotate";
     private final MetricsFeatureProvider mMetricsFeatureProvider;
+    private Preference mPreference;
+    private RotationPolicy.RotationPolicyListener mRotationPolicyListener;
 
-    public AutoRotatePreferenceController(Context context) {
-        super(context);
+    public AutoRotatePreferenceController(Context context, String key) {
+        super(context, key);
         mMetricsFeatureProvider = FeatureFactory.getFactory(context).getMetricsFeatureProvider();
     }
 
     @Override
-    public String getPreferenceKey() {
-        return KEY_AUTO_ROTATE;
-    }
-
-    @Override
     public void updateState(Preference preference) {
-        final DropDownPreference rotatePreference = (DropDownPreference) preference;
-        final int rotateLockedResourceId;
-        preference.setSummary("%s");
-        // The following block sets the string used when rotation is locked.
-        // If the device locks specifically to portrait or landscape (rather than current
-        // rotation), then we use a different string to include this information.
-        if (allowAllRotations()) {
-            rotateLockedResourceId = R.string.display_auto_rotate_stay_in_current;
-        } else {
-            if (RotationPolicy.getRotationLockOrientation(mContext)
-                    == Configuration.ORIENTATION_PORTRAIT) {
-                rotateLockedResourceId = R.string.display_auto_rotate_stay_in_portrait;
-            } else {
-                rotateLockedResourceId = R.string.display_auto_rotate_stay_in_landscape;
-            }
+        mPreference = preference;
+        super.updateState(preference);
+    }
+
+    @Override
+    public void onResume() {
+        if (mRotationPolicyListener == null) {
+            mRotationPolicyListener = new RotationPolicy.RotationPolicyListener() {
+                @Override
+                public void onChange() {
+                    if (mPreference != null) {
+                        updateState(mPreference);
+                    }
+                }
+            };
         }
-        rotatePreference.setEntries(new CharSequence[]{
-                mContext.getString(R.string.display_auto_rotate_rotate),
-                mContext.getString(rotateLockedResourceId),
-        });
-        rotatePreference.setEntryValues(new CharSequence[]{"0", "1"});
-        rotatePreference.setValueIndex(RotationPolicy.isRotationLocked(mContext) ?
-                1 : 0);
+        RotationPolicy.registerRotationPolicyListener(mContext,
+                mRotationPolicyListener);
     }
 
     @Override
-    public boolean isAvailable() {
-        return RotationPolicy.isRotationLockToggleVisible(mContext);
-    }
-
-    private boolean allowAllRotations() {
-        return mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_allowAllRotations);
+    public void onPause() {
+        if (mRotationPolicyListener != null) {
+            RotationPolicy.unregisterRotationPolicyListener(mContext, mRotationPolicyListener);
+        }
     }
 
     @Override
-    public boolean onPreferenceChange(Preference preference, Object newValue) {
-        final boolean locked = Integer.parseInt((String) newValue) != 0;
+    public int getAvailabilityStatus() {
+        return RotationPolicy.isRotationLockToggleVisible(mContext)
+                ? AVAILABLE : UNSUPPORTED_ON_DEVICE;
+    }
+
+    @Override
+    public boolean isSliceable() {
+        return TextUtils.equals(getPreferenceKey(), "auto_rotate");
+    }
+
+    @Override
+    public boolean isChecked() {
+        return !RotationPolicy.isRotationLocked(mContext);
+    }
+
+    @Override
+    public boolean setChecked(boolean isChecked) {
+        final boolean isLocked = !isChecked;
         mMetricsFeatureProvider.action(mContext, MetricsProto.MetricsEvent.ACTION_ROTATION_LOCK,
-                locked);
-        RotationPolicy.setRotationLock(mContext, locked);
+                isLocked);
+        RotationPolicy.setRotationLock(mContext, isLocked);
         return true;
     }
 }

@@ -15,23 +15,6 @@
  */
 package com.android.settings.bluetooth;
 
-import android.content.Context;
-
-import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
-import com.android.settings.testutils.FakeFeatureFactory;
-import com.android.settingslib.bluetooth.LocalBluetoothManager;
-
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Answers;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
@@ -39,32 +22,41 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.content.Context;
+
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settingslib.bluetooth.LocalBluetoothManager;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.Answers;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class UtilsTest {
 
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     private Context mContext;
-    @Mock
-    private LocalBluetoothManager mLocalBluetoothManager;
 
-    private FakeFeatureFactory mFakeFeatureFactory;
     private MetricsFeatureProvider mMetricsFeatureProvider;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        FakeFeatureFactory.setupForTest(mContext);
-        mFakeFeatureFactory = (FakeFeatureFactory) FakeFeatureFactory.getFactory(mContext);
-        mMetricsFeatureProvider = mFakeFeatureFactory.getMetricsFeatureProvider();
+        mMetricsFeatureProvider = FakeFeatureFactory.setupForTest().getMetricsFeatureProvider();
     }
 
     @Test
-    public void showConnectingError_shouldLogBluetoothConnectError() {
+    public void testShowConnectingError_shouldLogBluetoothConnectError() {
         when(mContext.getString(anyInt(), anyString())).thenReturn("testMessage");
         Utils.showConnectingError(mContext, "testName", mock(LocalBluetoothManager.class));
 
         verify(mMetricsFeatureProvider).visible(eq(mContext), anyInt(),
-            eq(MetricsEvent.ACTION_SETTINGS_BLUETOOTH_CONNECT_ERROR));
+                eq(MetricsEvent.ACTION_SETTINGS_BLUETOOTH_CONNECT_ERROR));
     }
 }

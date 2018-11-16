@@ -18,9 +18,8 @@ package com.android.settings.accessibility;
 
 import android.os.Bundle;
 import android.provider.Settings;
-import android.support.v7.preference.ListPreference;
-import android.support.v7.preference.Preference;
-import android.view.View;
+import androidx.preference.ListPreference;
+import androidx.preference.Preference;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.Switch;
 
@@ -42,14 +41,26 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
     }
 
     @Override
+    public int getHelpResource() {
+        return R.string.help_url_color_correction;
+    }
+
+    @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        addPreferencesFromResource(R.xml.accessibility_daltonizer_settings);
-
         mType = (ListPreference) findPreference("type");
 
+        if (!AccessibilitySettings.isColorTransformAccelerated(getActivity())) {
+            mFooterPreferenceMixin.createFooterPreference().setTitle(
+                    R.string.accessibility_display_daltonizer_preference_subtitle);
+        }
         initPreferences();
+    }
+
+    @Override
+    protected int getPreferenceScreenResId() {
+        return R.xml.accessibility_daltonizer_settings;
     }
 
     @Override
@@ -68,13 +79,6 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
     }
 
     @Override
-    public void onViewCreated(View view, Bundle savedInstanceState) {
-        super.onViewCreated(view, savedInstanceState);
-
-        setTitle(getString(R.string.accessibility_display_daltonizer_preference_title));
-    }
-
-    @Override
     protected void onInstallSwitchBarToggleSwitch() {
         super.onInstallSwitchBarToggleSwitch();
 
@@ -87,6 +91,12 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
     protected void onRemoveSwitchBarToggleSwitch() {
         super.onRemoveSwitchBarToggleSwitch();
         mSwitchBar.removeOnSwitchChangeListener(this);
+    }
+
+    @Override
+    protected void updateSwitchBarText(SwitchBar switchBar) {
+        switchBar.setSwitchBarText(R.string.accessibility_daltonizer_master_switch_title,
+                R.string.accessibility_daltonizer_master_switch_title);
     }
 
     private void initPreferences() {

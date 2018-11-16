@@ -24,8 +24,8 @@ import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.Settings;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 import android.util.Log;
 
 import com.android.internal.logging.nano.MetricsProto;
@@ -104,8 +104,7 @@ public class ManagedProfileSettings extends SettingsPreferenceFragment
 
     private void loadDataAndPopulateUi() {
         if (mWorkModePreference != null) {
-            mWorkModePreference.setChecked(
-                    !mUserManager.isQuietModeEnabled(mManagedUser));
+            updateWorkModePreference();
         }
 
         if (mContactPrefrence != null) {
@@ -124,15 +123,20 @@ public class ManagedProfileSettings extends SettingsPreferenceFragment
         return MetricsProto.MetricsEvent.ACCOUNTS_WORK_PROFILE_SETTINGS;
     }
 
+    private void updateWorkModePreference() {
+        boolean isWorkModeOn = !mUserManager.isQuietModeEnabled(mManagedUser);
+        mWorkModePreference.setChecked(isWorkModeOn);
+        mWorkModePreference.setSummary(isWorkModeOn
+                ? R.string.work_mode_on_summary
+                : R.string.work_mode_off_summary);
+    }
+
 
     @Override
     public boolean onPreferenceChange(Preference preference, Object newValue) {
         if (preference == mWorkModePreference) {
-            if ((boolean) newValue) {
-                mUserManager.trySetQuietModeDisabled(mManagedUser.getIdentifier(), null);
-            } else {
-                mUserManager.setQuietModeEnabled(mManagedUser.getIdentifier(), true);
-            }
+            boolean quietModeEnabled = !(boolean) newValue;
+            mUserManager.requestQuietModeEnabled(quietModeEnabled, mManagedUser);
             return true;
         }
         if (preference == mContactPrefrence) {
@@ -162,8 +166,7 @@ public class ManagedProfileSettings extends SettingsPreferenceFragment
                     || action.equals(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE)) {
                 if (intent.getIntExtra(Intent.EXTRA_USER_HANDLE,
                         UserHandle.USER_NULL) == mManagedUser.getIdentifier()) {
-                    mWorkModePreference.setChecked(
-                            !mUserManager.isQuietModeEnabled(mManagedUser));
+                    updateWorkModePreference();
                 }
                 return;
             }

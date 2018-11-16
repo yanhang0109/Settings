@@ -36,7 +36,6 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ResolveInfo;
 import android.content.pm.UserInfo;
 import android.content.res.Resources;
-import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
@@ -60,17 +59,18 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.android.internal.logging.nano.MetricsProto;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.settings.fuelgauge.BatteryUtils;
 import com.android.settings.overlay.FeatureFactory;
-import com.android.settings.R;
 import com.android.settings.users.UserDialogs;
 import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+
 import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class DeviceAdminAdd extends Activity {
     static final String TAG = "DeviceAdminAdd";
@@ -147,18 +147,14 @@ public class DeviceAdminAdd extends Activity {
                 DevicePolicyManager.EXTRA_DEVICE_ADMIN);
         if (who == null) {
             String packageName = getIntent().getStringExtra(EXTRA_DEVICE_ADMIN_PACKAGE_NAME);
-            for (ComponentName component : mDPM.getActiveAdmins()) {
-                if (component.getPackageName().equals(packageName)) {
-                    who = component;
-                    mUninstalling = true;
-                    break;
-                }
-            }
-            if (who == null) {
+            Optional<ComponentName> installedAdmin = findAdminWithPackageName(packageName);
+            if (!installedAdmin.isPresent()) {
                 Log.w(TAG, "No component specified in " + action);
                 finish();
                 return;
             }
+            who = installedAdmin.get();
+            mUninstalling = true;
         }
 
         if (action != null && action.equals(DevicePolicyManager.ACTION_SET_PROFILE_OWNER)) {
@@ -353,23 +349,13 @@ public class DeviceAdminAdd extends Activity {
         restrictedAction.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 if (!mActionButton.isEnabled()) {
+                    showPolicyTransparencyDialogIfRequired();
                     return;
                 }
                 if (mAdding) {
                     addAndFinish();
                 } else if (isManagedProfile(mDeviceAdmin)
                         && mDeviceAdmin.getComponent().equals(mDPM.getProfileOwner())) {
-                    if (hasBaseCantRemoveProfileRestriction()) {
-                        // If DISALLOW_REMOVE_MANAGED_PROFILE is set by the system, there's no
-                        // point showing a dialog saying it's disabled by an admin.
-                        return;
-                    }
-                    EnforcedAdmin enforcedAdmin = getAdminEnforcingCantRemoveProfile();
-                    if (enforcedAdmin != null) {
-                        RestrictedLockUtils.sendShowAdminSupportDetailsIntent(DeviceAdminAdd.this,
-                                enforcedAdmin);
-                        return;
-                    }
                     final int userId = UserHandle.myUserId();
                     UserDialogs.createRemoveDialog(DeviceAdminAdd.this, userId,
                             new DialogInterface.OnClickListener() {
@@ -380,7 +366,7 @@ public class DeviceAdminAdd extends Activity {
                                     finish();
                                 }
                             }
-                            ).show();
+                    ).show();
                 } else if (mUninstalling) {
                     mDPM.uninstallPackageWithActiveAdmins(mDeviceAdmin.getPackageName());
                     finish();
@@ -414,12 +400,35 @@ public class DeviceAdminAdd extends Activity {
         });
     }
 
+    /**
+     * Shows a dialog to explain why the button is disabled if required.
+     */
+    private void showPolicyTransparencyDialogIfRequired() {
+        if (isManagedProfile(mDeviceAdmin)
+                && mDeviceAdmin.getComponent().equals(mDPM.getProfileOwner())) {
+            if (hasBaseCantRemoveProfileRestriction()) {
+                // If DISALLOW_REMOVE_MANAGED_PROFILE is set by the system, there's no
+                // point showing a dialog saying it's disabled by an admin.
+                return;
+            }
+            EnforcedAdmin enforcedAdmin = getAdminEnforcingCantRemoveProfile();
+            if (enforcedAdmin != null) {
+                RestrictedLockUtils.sendShowAdminSupportDetailsIntent(
+                        DeviceAdminAdd.this,
+                        enforcedAdmin);
+            }
+        }
+    }
+
     void addAndFinish() {
         try {
             logSpecialPermissionChange(true, mDeviceAdmin.getComponent().getPackageName());
             mDPM.setActiveAdmin(mDeviceAdmin.getComponent(), mRefreshing);
             EventLog.writeEvent(EventLogTags.EXP_DET_DEVICE_ADMIN_ACTIVATED_BY_USER,
                 mDeviceAdmin.getActivityInfo().applicationInfo.uid);
+
+            unrestrictAppIfPossible(BatteryUtils.getInstance(this));
+
             setResult(Activity.RESULT_OK);
         } catch (RuntimeException e) {
             // Something bad happened...  could be that it was
@@ -439,6 +448,15 @@ public class DeviceAdminAdd extends Activity {
             }
         }
         finish();
+    }
+
+    void unrestrictAppIfPossible(BatteryUtils batteryUtils) {
+        // Unrestrict admin app if it is already been restricted
+        final String packageName = mDeviceAdmin.getComponent().getPackageName();
+        final int uid = batteryUtils.getPackageUid(packageName);
+        if (batteryUtils.isForceAppStandbyEnabled(uid, packageName)) {
+            batteryUtils.setForceAppStandby(uid, packageName, AppOpsManager.MODE_ALLOWED);
+        }
     }
 
     void continueRemoveAction(CharSequence msg) {
@@ -682,6 +700,18 @@ public class DeviceAdminAdd extends Activity {
         UserInfo info = um.getUserInfo(
                 UserHandle.getUserId(adminInfo.getActivityInfo().applicationInfo.uid));
         return info != null ? info.isManagedProfile() : false;
+    }
+
+    /**
+     * @return an {@link Optional} containing the admin with a given package name, if it exists,
+     *         or {@link Optional#empty()} otherwise.
+     */
+    private Optional<ComponentName> findAdminWithPackageName(String packageName) {
+        List<ComponentName> admins = mDPM.getActiveAdmins();
+        if (admins == null) {
+            return Optional.empty();
+        }
+        return admins.stream().filter(i -> i.getPackageName().equals(packageName)).findAny();
     }
 
     private boolean isAdminUninstallable() {

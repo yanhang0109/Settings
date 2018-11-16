@@ -17,20 +17,28 @@
 package com.android.settings.search;
 
 import android.content.Context;
+import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.os.Build;
+import android.provider.SearchIndexablesContract.SiteMapColumns;
+import androidx.annotation.VisibleForTesting;
+import android.text.TextUtils;
 import android.util.Log;
+
+import java.util.List;
 
 public class IndexDatabaseHelper extends SQLiteOpenHelper {
 
     private static final String TAG = "IndexDatabaseHelper";
 
     private static final String DATABASE_NAME = "search_index.db";
-    private static final int DATABASE_VERSION = 117;
+    private static final int DATABASE_VERSION = 118;
 
-    private static final String INDEX = "index";
+    private static final String SHARED_PREFS_TAG = "indexing_manager";
+
+    private static final String PREF_KEY_INDEXED_PROVIDERS = "indexed_providers";
 
     public interface Tables {
         String TABLE_PREFS_INDEX = "prefs_index";
@@ -71,14 +79,6 @@ public class IndexDatabaseHelper extends SQLiteOpenHelper {
     public interface SavedQueriesColumns {
         String QUERY = "query";
         String TIME_STAMP = "timestamp";
-    }
-
-    public interface SiteMapColumns {
-        String DOCID = "docid";
-        String PARENT_CLASS = "parent_class";
-        String CHILD_CLASS = "child_class";
-        String PARENT_TITLE = "parent_title";
-        String CHILD_TITLE = "child_title";
     }
 
     private static final String CREATE_INDEX_TABLE =
@@ -172,7 +172,7 @@ public class IndexDatabaseHelper extends SQLiteOpenHelper {
 
     public IndexDatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
-        mContext = context;
+        mContext = context.getApplicationContext();
     }
 
     @Override
@@ -223,6 +223,10 @@ public class IndexDatabaseHelper extends SQLiteOpenHelper {
     }
 
     public void reconstruct(SQLiteDatabase db) {
+        mContext.getSharedPreferences(SHARED_PREFS_TAG, Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .commit();
         dropTables(db);
         bootstrapDB(db);
     }
@@ -245,28 +249,55 @@ public class IndexDatabaseHelper extends SQLiteOpenHelper {
         return version;
     }
 
-    public static void clearCachedIndexed(Context context) {
-        context.getSharedPreferences(INDEX, 0).edit().clear().commit();
+    @VisibleForTesting
+    static String buildProviderVersionedNames(List<ResolveInfo> providers) {
+        StringBuilder sb = new StringBuilder();
+        for (ResolveInfo info : providers) {
+            sb.append(info.providerInfo.packageName)
+                    .append(':')
+                    .append(info.providerInfo.applicationInfo.longVersionCode)
+                    .append(',');
+        }
+        return sb.toString();
     }
 
-    public static void setLocaleIndexed(Context context, String locale) {
-        context.getSharedPreferences(INDEX, 0).edit().putBoolean(locale, true).commit();
+    static void setLocaleIndexed(Context context, String locale) {
+        context.getSharedPreferences(SHARED_PREFS_TAG, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(locale, true)
+                .apply();
     }
 
-    public static boolean isLocaleAlreadyIndexed(Context context, String locale) {
-        return context.getSharedPreferences(INDEX, 0).getBoolean(locale, false);
+    static void setProvidersIndexed(Context context, String providerVersionedNames) {
+        context.getSharedPreferences(SHARED_PREFS_TAG, Context.MODE_PRIVATE)
+                .edit()
+                .putString(PREF_KEY_INDEXED_PROVIDERS, providerVersionedNames)
+                .apply();
     }
 
-    public static boolean isBuildIndexed(Context context, String buildNo) {
-        return context.getSharedPreferences(INDEX, 0).getBoolean(buildNo, false);
+    static boolean isLocaleAlreadyIndexed(Context context, String locale) {
+        return context.getSharedPreferences(SHARED_PREFS_TAG, Context.MODE_PRIVATE)
+                .getBoolean(locale, false);
     }
 
-    public static void setBuildIndexed(Context context, String buildNo) {
-        context.getSharedPreferences(INDEX, 0).edit().putBoolean(buildNo, true).commit();
+    static boolean areProvidersIndexed(Context context, String providerVersionedNames) {
+        final String indexedProviders =
+                context.getSharedPreferences(SHARED_PREFS_TAG, Context.MODE_PRIVATE)
+                        .getString(PREF_KEY_INDEXED_PROVIDERS, null);
+        return TextUtils.equals(indexedProviders, providerVersionedNames);
+    }
+
+    static boolean isBuildIndexed(Context context, String buildNo) {
+        return context.getSharedPreferences(SHARED_PREFS_TAG,
+                Context.MODE_PRIVATE).getBoolean(buildNo, false);
+    }
+
+    static void setBuildIndexed(Context context, String buildNo) {
+        // Use #apply() instead of #commit() since #commit() Robolectric loop indefinitely in sdk 26
+        context.getSharedPreferences(SHARED_PREFS_TAG, 0).edit().putBoolean(buildNo, true).apply();
     }
 
     private void dropTables(SQLiteDatabase db) {
-        clearCachedIndexed(mContext);
         db.execSQL("DROP TABLE IF EXISTS " + Tables.TABLE_META_INDEX);
         db.execSQL("DROP TABLE IF EXISTS " + Tables.TABLE_PREFS_INDEX);
         db.execSQL("DROP TABLE IF EXISTS " + Tables.TABLE_SAVED_QUERIES);

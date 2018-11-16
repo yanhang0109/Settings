@@ -18,14 +18,16 @@ package com.android.settings.enterprise;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import android.util.IconDrawableFactory;
 
-import com.android.settings.R;
 import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.applications.ApplicationFeatureProvider;
 import com.android.settings.applications.UserAppInfo;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settings.widget.AppPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.List;
 
@@ -33,8 +35,8 @@ import java.util.List;
  * PreferenceController that builds a dynamic list of applications provided by
  * {@link ApplicationListBuilder} instance.
  */
-public class ApplicationListPreferenceController extends PreferenceController
-        implements ApplicationFeatureProvider.ListOfAppsCallback {
+public class ApplicationListPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin, ApplicationFeatureProvider.ListOfAppsCallback {
     private final PackageManager mPm;
     private SettingsPreferenceFragment mParent;
 
@@ -62,13 +64,13 @@ public class ApplicationListPreferenceController extends PreferenceController
         if (screen == null) {
             return;
         }
+        final IconDrawableFactory iconDrawableFactory = IconDrawableFactory.newInstance(mContext);
         final Context prefContext = mParent.getPreferenceManager().getContext();
         for (int position = 0; position < result.size(); position++) {
             final UserAppInfo item = result.get(position);
-            final Preference preference = new Preference(prefContext);
-            preference.setLayoutResource(R.layout.preference_app);
+            final Preference preference = new AppPreference(prefContext);
             preference.setTitle(item.appInfo.loadLabel(mPm));
-            preference.setIcon(item.appInfo.loadIcon(mPm));
+            preference.setIcon(iconDrawableFactory.getBadgedIcon(item.appInfo));
             preference.setOrder(position);
             preference.setSelectable(false);
             screen.addPreference(preference);

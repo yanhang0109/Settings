@@ -14,26 +14,30 @@
 package com.android.settings.enterprise;
 
 import android.content.Context;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 
 import com.android.settings.R;
-import com.android.settings.core.DynamicAvailabilityPreferenceController;
-import com.android.settings.core.lifecycle.Lifecycle;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settings.overlay.FeatureFactory;
+import com.android.settingslib.core.AbstractPreferenceController;
 
-public class EnterprisePrivacyPreferenceController extends DynamicAvailabilityPreferenceController {
+public class EnterprisePrivacyPreferenceController extends AbstractPreferenceController implements
+        PreferenceControllerMixin {
 
     private static final String KEY_ENTERPRISE_PRIVACY = "enterprise_privacy";
     private final EnterprisePrivacyFeatureProvider mFeatureProvider;
 
-    public EnterprisePrivacyPreferenceController(Context context, Lifecycle lifecycle) {
-        super(context, lifecycle);
+    public EnterprisePrivacyPreferenceController(Context context) {
+        super(context);
         mFeatureProvider = FeatureFactory.getFactory(context)
                 .getEnterprisePrivacyFeatureProvider(context);
     }
 
     @Override
     public void updateState(Preference preference) {
+        if (preference == null) {
+            return;
+        }
         final String organizationName = mFeatureProvider.getDeviceOwnerOrganizationName();
         if (organizationName == null) {
             preference.setSummary(R.string.enterprise_privacy_settings_summary_generic);
@@ -45,9 +49,7 @@ public class EnterprisePrivacyPreferenceController extends DynamicAvailabilityPr
 
     @Override
     public boolean isAvailable() {
-        final boolean available = mFeatureProvider.hasDeviceOwner();
-        notifyOnAvailabilityUpdate(available);
-        return available;
+        return mFeatureProvider.hasDeviceOwner();
     }
 
     @Override

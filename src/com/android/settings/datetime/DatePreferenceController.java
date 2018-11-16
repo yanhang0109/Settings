@@ -20,18 +20,20 @@ import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.DatePickerDialog;
 import android.content.Context;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.widget.DatePicker;
 
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.RestrictedPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.Calendar;
 
-public class DatePreferenceController extends PreferenceController implements
-        DatePickerDialog.OnDateSetListener {
+public class DatePreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, DatePickerDialog.OnDateSetListener {
 
     public interface DatePreferenceHost extends UpdateTimeAndDateCallback {
         void showDatePicker();
@@ -58,9 +60,14 @@ public class DatePreferenceController extends PreferenceController implements
 
     @Override
     public void updateState(Preference preference) {
+        if (!(preference instanceof RestrictedPreference)) {
+            return;
+        }
         final Calendar now = Calendar.getInstance();
         preference.setSummary(DateFormat.getLongDateFormat(mContext).format(now.getTime()));
-        preference.setEnabled(!mAutoTimePreferenceController.isEnabled());
+        if (!((RestrictedPreference) preference).isDisabledByAdmin()) {
+            preference.setEnabled(!mAutoTimePreferenceController.isEnabled());
+        }
     }
 
     @Override

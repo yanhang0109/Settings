@@ -16,12 +16,14 @@
 
 package com.android.settings.enterprise;
 
+import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.content.res.Resources;
+import android.net.ConnectivityManager;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.Settings;
@@ -30,9 +32,8 @@ import android.text.style.ClickableSpan;
 import android.view.View;
 
 import com.android.settings.R;
-import com.android.settings.applications.PackageManagerWrapper;
-import com.android.settings.vpn2.ConnectivityManagerWrapper;
 import com.android.settings.vpn2.VpnUtils;
+import com.android.settingslib.wrapper.PackageManagerWrapper;
 
 import java.util.Date;
 import java.util.List;
@@ -40,16 +41,16 @@ import java.util.List;
 public class EnterprisePrivacyFeatureProviderImpl implements EnterprisePrivacyFeatureProvider {
 
     private final Context mContext;
-    private final DevicePolicyManagerWrapper mDpm;
+    private final DevicePolicyManager mDpm;
     private final PackageManagerWrapper mPm;
     private final UserManager mUm;
-    private final ConnectivityManagerWrapper mCm;
+    private final ConnectivityManager mCm;
     private final Resources mResources;
 
     private static final int MY_USER_ID = UserHandle.myUserId();
 
-    public EnterprisePrivacyFeatureProviderImpl(Context context, DevicePolicyManagerWrapper dpm,
-            PackageManagerWrapper pm, UserManager um, ConnectivityManagerWrapper cm,
+    public EnterprisePrivacyFeatureProviderImpl(Context context, DevicePolicyManager dpm,
+            PackageManagerWrapper pm, UserManager um, ConnectivityManager cm,
             Resources resources) {
         mContext = context.getApplicationContext();
         mDpm = dpm;
@@ -106,7 +107,7 @@ public class EnterprisePrivacyFeatureProviderImpl implements EnterprisePrivacyFe
             disclosure.append(mResources.getString(R.string.do_disclosure_generic));
         }
         disclosure.append(mResources.getString(R.string.do_disclosure_learn_more_separator));
-        disclosure.append(mResources.getString(R.string.do_disclosure_learn_more),
+        disclosure.append(mResources.getString(R.string.learn_more),
                 new EnterprisePrivacySpan(mContext), 0);
         return disclosure;
     }
@@ -158,11 +159,14 @@ public class EnterprisePrivacyFeatureProviderImpl implements EnterprisePrivacyFe
 
     @Override
     public int getMaximumFailedPasswordsBeforeWipeInCurrentUser() {
-        final ComponentName profileOwner = mDpm.getProfileOwnerAsUser(MY_USER_ID);
-        if (profileOwner == null) {
+        ComponentName owner = mDpm.getDeviceOwnerComponentOnCallingUser();
+        if (owner == null) {
+            owner = mDpm.getProfileOwnerAsUser(MY_USER_ID);
+        }
+        if (owner == null) {
             return 0;
         }
-        return mDpm.getMaximumFailedPasswordsForWipe(profileOwner, MY_USER_ID);
+        return mDpm.getMaximumFailedPasswordsForWipe(owner, MY_USER_ID);
     }
 
     @Override
@@ -197,20 +201,25 @@ public class EnterprisePrivacyFeatureProviderImpl implements EnterprisePrivacyFe
     }
 
     @Override
-    public int getNumberOfOwnerInstalledCaCertsForCurrentUserAndManagedProfile() {
-        int num = 0;
-        List<String> certs = mDpm.getOwnerInstalledCaCerts(new UserHandle(MY_USER_ID));
-        if (certs != null) {
-            num += certs.size();
+    public int getNumberOfOwnerInstalledCaCertsForCurrentUser() {
+        final List<String> certs = mDpm.getOwnerInstalledCaCerts(new UserHandle(MY_USER_ID));
+        if (certs == null) {
+            return 0;
         }
+        return certs.size();
+    }
+
+    @Override
+    public int getNumberOfOwnerInstalledCaCertsForManagedProfile() {
         final int userId = getManagedProfileUserId();
-        if (userId != UserHandle.USER_NULL) {
-            certs = mDpm.getOwnerInstalledCaCerts(new UserHandle(userId));
-            if (certs != null) {
-                num += certs.size();
-            }
+        if (userId == UserHandle.USER_NULL) {
+            return 0;
         }
-        return num;
+        final List<String> certs = mDpm.getOwnerInstalledCaCerts(new UserHandle(userId));
+        if (certs == null) {
+            return 0;
+        }
+        return certs.size();
     }
 
     @Override
@@ -226,6 +235,11 @@ public class EnterprisePrivacyFeatureProviderImpl implements EnterprisePrivacyFe
         return activeAdmins;
     }
 
+    @Override
+    public boolean areBackupsMandatory() {
+        return null != mDpm.getMandatoryBackupTransport();
+    }
+
     protected static class EnterprisePrivacySpan extends ClickableSpan {
         private final Context mContext;
 
@@ -235,7 +249,8 @@ public class EnterprisePrivacyFeatureProviderImpl implements EnterprisePrivacyFe
 
         @Override
         public void onClick(View widget) {
-            mContext.startActivity(new Intent(Settings.ACTION_ENTERPRISE_PRIVACY_SETTINGS));
+            mContext.startActivity(new Intent(Settings.ACTION_ENTERPRISE_PRIVACY_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         }
 
         @Override

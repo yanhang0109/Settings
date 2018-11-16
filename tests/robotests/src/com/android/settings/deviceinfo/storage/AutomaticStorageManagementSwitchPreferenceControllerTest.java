@@ -17,9 +17,7 @@
 package com.android.settings.deviceinfo.storage;
 
 import static com.google.common.truth.Truth.assertThat;
-
 import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -31,19 +29,19 @@ import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.os.SystemProperties;
 import android.provider.Settings;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.internal.os.RoSystemProperties;
 import com.android.settings.deletionhelper.ActivationWarningFragment;
-import com.android.settings.testutils.FakeFeatureFactory;
-import com.android.settings.testutils.shadow.SettingsShadowSystemProperties;
-import com.android.settings.widget.MasterSwitchPreference;
 import com.android.settings.overlay.FeatureFactory;
+import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settings.widget.MasterSwitchPreference;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -52,11 +50,9 @@ import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.annotation.Config;
-
+import org.robolectric.util.ReflectionHelpers;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class AutomaticStorageManagementSwitchPreferenceControllerTest {
 
     @Mock
@@ -70,29 +66,35 @@ public class AutomaticStorageManagementSwitchPreferenceControllerTest {
 
     private Context mContext;
     private AutomaticStorageManagementSwitchPreferenceController mController;
-    private MetricsFeatureProvider mMetricsFeature;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
         mContext = RuntimeEnvironment.application.getApplicationContext();
-        FeatureFactory factory = FeatureFactory.getFactory(mContext);
-        mMetricsFeature = factory.getMetricsFeatureProvider();
+        final FeatureFactory factory = FeatureFactory.getFactory(mContext);
+        final MetricsFeatureProvider metricsFeature = factory.getMetricsFeatureProvider();
 
         mController = new AutomaticStorageManagementSwitchPreferenceController(
-                mContext, mMetricsFeature, mFragmentManager);
+                mContext, metricsFeature, mFragmentManager);
         when(mScreen.findPreference(mController.getPreferenceKey())).thenReturn(mPreference);
     }
 
     @Test
-    public void isAvailable_shouldAlwaysReturnTrue() {
+    public void isAvailable_shouldReturnTrue_forHighRamDevice() {
         assertThat(mController.isAvailable()).isTrue();
+    }
+
+    @Test
+    public void isAvailable_shouldAlwaysReturnFalse_forLowRamDevice() {
+        ReflectionHelpers.setStaticField(RoSystemProperties.class, "CONFIG_LOW_RAM", true);
+        assertThat(mController.isAvailable()).isFalse();
+        ReflectionHelpers.setStaticField(RoSystemProperties.class, "CONFIG_LOW_RAM", false);
     }
 
     @Test
     public void onResume_shouldReflectEnabledStatus() {
         mController.displayPreference(mScreen);
-        ContentResolver resolver = mContext.getContentResolver();
+        final ContentResolver resolver = mContext.getContentResolver();
         Settings.Secure.putInt(resolver, Settings.Secure.AUTOMATIC_STORAGE_MANAGER_ENABLED, 1);
 
         mController.onResume();
@@ -113,10 +115,8 @@ public class AutomaticStorageManagementSwitchPreferenceControllerTest {
     public void togglingShouldCauseMetricsEvent() {
         // FakeFeatureFactory uses mock contexts, so this test scaffolds itself rather than using
         // the instance variables.
-        FakeFeatureFactory.setupForTest(mMockContext);
-        FakeFeatureFactory factory =
-                (FakeFeatureFactory) FakeFeatureFactory.getFactory(mMockContext);
-        AutomaticStorageManagementSwitchPreferenceController controller =
+        final FakeFeatureFactory factory = FakeFeatureFactory.setupForTest();
+        final AutomaticStorageManagementSwitchPreferenceController controller =
                 new AutomaticStorageManagementSwitchPreferenceController(
                         mMockContext, factory.metricsFeatureProvider, mFragmentManager);
 
@@ -130,15 +130,18 @@ public class AutomaticStorageManagementSwitchPreferenceControllerTest {
     public void togglingShouldUpdateSettingsSecure() {
         mController.onSwitchToggled(true);
 
-        ContentResolver resolver = mContext.getContentResolver();
+        final ContentResolver resolver = mContext.getContentResolver();
         assertThat(Settings.Secure.getInt(
                 resolver, Settings.Secure.AUTOMATIC_STORAGE_MANAGER_ENABLED, 0)).isNotEqualTo(0);
     }
 
     @Test
     public void togglingOnShouldTriggerWarningFragment() {
-        FragmentTransaction transaction = mock(FragmentTransaction.class);
-        when (mFragmentManager.beginTransaction()).thenReturn(transaction);
+        final FragmentTransaction transaction = mock(FragmentTransaction.class);
+        when(mFragmentManager.beginTransaction()).thenReturn(transaction);
+        SystemProperties.set(
+                AutomaticStorageManagementSwitchPreferenceController
+                        .STORAGE_MANAGER_ENABLED_BY_DEFAULT_PROPERTY, "false");
 
         mController.onSwitchToggled(true);
 
@@ -147,8 +150,8 @@ public class AutomaticStorageManagementSwitchPreferenceControllerTest {
 
     @Test
     public void togglingOffShouldTriggerWarningFragment() {
-        FragmentTransaction transaction = mock(FragmentTransaction.class);
-        when (mFragmentManager.beginTransaction()).thenReturn(transaction);
+        final FragmentTransaction transaction = mock(FragmentTransaction.class);
+        when(mFragmentManager.beginTransaction()).thenReturn(transaction);
 
         mController.onSwitchToggled(false);
 
@@ -156,17 +159,34 @@ public class AutomaticStorageManagementSwitchPreferenceControllerTest {
     }
 
 
-    @Config(shadows = {SettingsShadowSystemProperties.class})
     @Test
     public void togglingOnShouldNotTriggerWarningFragmentIfEnabledByDefault() {
-        FragmentTransaction transaction = mock(FragmentTransaction.class);
-        when (mFragmentManager.beginTransaction()).thenReturn(transaction);
-        SettingsShadowSystemProperties.set(
-                AutomaticStorageManagementSwitchPreferenceController
+        final FragmentTransaction transaction = mock(FragmentTransaction.class);
+        when(mFragmentManager.beginTransaction()).thenReturn(transaction);
+        SystemProperties.set(
+            AutomaticStorageManagementSwitchPreferenceController
                         .STORAGE_MANAGER_ENABLED_BY_DEFAULT_PROPERTY, "true");
 
         mController.onSwitchToggled(true);
 
         verify(transaction, never()).add(any(), eq(ActivationWarningFragment.TAG));
+    }
+
+    @Test
+    public void togglingOnShouldTriggerWarningFragmentIfEnabledByDefaultAndDisabledByPolicy() {
+        final FragmentTransaction transaction = mock(FragmentTransaction.class);
+        when(mFragmentManager.beginTransaction()).thenReturn(transaction);
+        SystemProperties.set(
+                AutomaticStorageManagementSwitchPreferenceController
+                        .STORAGE_MANAGER_ENABLED_BY_DEFAULT_PROPERTY,
+                "true");
+        Settings.Secure.putInt(
+                mContext.getContentResolver(),
+                Settings.Secure.AUTOMATIC_STORAGE_MANAGER_TURNED_OFF_BY_POLICY,
+                1);
+
+        mController.onSwitchToggled(true);
+
+        verify(transaction).add(any(), eq(ActivationWarningFragment.TAG));
     }
 }

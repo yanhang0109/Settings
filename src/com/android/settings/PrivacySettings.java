@@ -29,11 +29,11 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.SearchIndexableResource;
 import android.provider.Settings;
-import android.support.annotation.VisibleForTesting;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.Preference.OnPreferenceChangeListener;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceChangeListener;
+import androidx.preference.PreferenceScreen;
 import android.util.Log;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
@@ -63,7 +63,6 @@ public class PrivacySettings extends SettingsPreferenceFragment {
     @VisibleForTesting
     static final String DATA_MANAGEMENT = "data_management";
     private static final String BACKUP_INACTIVE = "backup_inactive";
-    private static final String FACTORY_RESET = "factory_reset";
     private static final String TAG = "PrivacySettings";
     private IBackupManager mBackupManager;
     private Preference mBackup;
@@ -221,7 +220,7 @@ public class PrivacySettings extends SettingsPreferenceFragment {
     }
 
     @Override
-    protected int getHelpResource() {
+    public int getHelpResource() {
         return R.string.help_url_backup_reset;
     }
 
@@ -244,10 +243,6 @@ public class PrivacySettings extends SettingsPreferenceFragment {
             nonVisibleKeys.add(BACKUP_DATA);
             nonVisibleKeys.add(AUTO_RESTORE);
             nonVisibleKeys.add(CONFIGURE_ACCOUNT);
-        }
-        if (RestrictedLockUtils.hasBaseUserRestriction(context,
-                UserManager.DISALLOW_FACTORY_RESET, UserHandle.myUserId())) {
-            nonVisibleKeys.add(FACTORY_RESET);
         }
     }
 }

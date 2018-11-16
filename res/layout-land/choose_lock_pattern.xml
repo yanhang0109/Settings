@@ -48,6 +48,7 @@
                 style="@style/SuwGlifIcon"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_gravity="?attr/suwGlifHeaderGravity"
                 android:layout_marginStart="0dp"
                 android:layout_marginEnd="0dp"
                 android:src="@drawable/ic_lock"/>
@@ -71,14 +72,31 @@
                         android:layout_marginStart="0dp"
                         android:layout_marginEnd="0dp"/>
 
+                    <TextView
+                        android:id="@+id/message"
+                        style="@style/SuwDescription.Glif"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minLines="2" />
+
                     <!-- header message -->
                     <TextView
                         android:id="@+id/headerText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:gravity="start|bottom"
+                        android:layout_marginTop="10dp"
+                        android:gravity="?attr/suwGlifHeaderGravity"
                         android:textSize="18sp"/>
+
+                    <Button
+                        android:id="@+id/screen_lock_options"
+                        style="@style/SuwGlifButton.Tertiary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:gravity="?attr/suwGlifHeaderGravity"
+                        android:text="@string/setup_lock_settings_options_button_label"
+                        android:visibility="gone" />
 
                 </LinearLayout>
 
@@ -101,6 +119,14 @@
                     android:clipChildren="false"
                     android:clipToPadding="false"
                     android:orientation="horizontal">
+
+                    <!-- left : skip -->
+                    <Button android:id="@+id/skip_button"
+                        style="@style/SuwGlifButton.Secondary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/skip_label"
+                        android:visibility="gone" />
 
                     <!-- left / top button: skip, or re-try -->
                     <Button android:id="@+id/footerLeftButton"
@@ -138,10 +164,12 @@
         </LinearLayout>
 
         <!-- right side: lock pattern -->
-        <FrameLayout
+        <com.android.setupwizardlib.view.FillContentLayout
+            style="@style/LockPatternContainerStyle"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1.0">
+            android:layout_weight="1.0"
+            android:paddingStart="0dp">
 
             <com.android.internal.widget.LockPatternView android:id="@+id/lockPattern"
                 android:layout_width="match_parent"
@@ -149,7 +177,7 @@
                 android:layout_gravity="center"
                 android:background="@color/lock_pattern_background" />
 
-        </FrameLayout>
+        </com.android.setupwizardlib.view.FillContentLayout>
 
     </com.android.internal.widget.LinearLayoutWithDefaultTouchRecepient>
 

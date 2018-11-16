@@ -16,38 +16,36 @@
 
 package com.android.settings.enterprise;
 
+import static com.android.settings.testutils.ApplicationTestUtils.buildInfo;
+import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.Answers.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 import android.content.pm.UserInfo;
-import android.support.v7.preference.PreferenceManager;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.PreferenceManager;
+import androidx.preference.PreferenceScreen;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settings.R;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
 import com.android.settings.applications.ApplicationFeatureProvider;
 import com.android.settings.applications.UserAppInfo;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.Config;
-import org.robolectric.shadows.ShadowApplication;
+import org.robolectric.RuntimeEnvironment;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.android.settings.testutils.ApplicationTestUtils.buildInfo;
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Answers.RETURNS_DEEP_STUBS;
-import static org.mockito.Mockito.when;
-
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class ApplicationListFragmentTest {
+
     private static final int USER_ID = 0;
     private static final int USER_APP_UID = 0;
 
@@ -64,7 +62,7 @@ public class ApplicationListFragmentTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        mContext = ShadowApplication.getInstance().getApplicationContext();
+        mContext = RuntimeEnvironment.application;
         when(mPreferenceManager.getContext()).thenReturn(mContext);
 
         mFragment = new ApplicationListFragmentTestable(mPreferenceManager, mScreen);
@@ -72,27 +70,26 @@ public class ApplicationListFragmentTest {
 
     @Test
     public void getLogTag() {
-        assertThat(mFragment.getLogTag())
-                .isEqualTo("EnterprisePrivacySettings");
+        assertThat(mFragment.getLogTag()).isEqualTo("EnterprisePrivacySettings");
     }
 
     @Test
     public void getScreenResource() {
         assertThat(mFragment.getPreferenceScreenResId())
-                .isEqualTo(R.xml.app_list_disclosure_settings);
+            .isEqualTo(R.xml.app_list_disclosure_settings);
     }
 
     @Test
     public void getPreferenceControllers() {
-        final List<PreferenceController> controllers = mFragment.getPreferenceControllers(mContext);
+        final List<AbstractPreferenceController> controllers =
+            mFragment.createPreferenceControllers(mContext);
         assertThat(controllers).isNotNull();
         assertThat(controllers.size()).isEqualTo(1);
-        int position = 0;
-        assertThat(controllers.get(position++)).isInstanceOf(
-                ApplicationListPreferenceController.class);
+        assertThat(controllers.get(0)).isInstanceOf(ApplicationListPreferenceController.class);
     }
 
-    @Test public void getCategories() {
+    @Test
+    public void getCategories() {
         assertThat(new ApplicationListFragment.AdminGrantedPermissionCamera().getMetricsCategory())
                 .isEqualTo(MetricsEvent.ENTERPRISE_PRIVACY_PERMISSIONS);
         assertThat(new ApplicationListFragment.AdminGrantedPermissionLocation().
@@ -108,7 +105,7 @@ public class ApplicationListFragmentTest {
         private final PreferenceManager mPreferenceManager;
         private final PreferenceScreen mPreferenceScreen;
 
-        public ApplicationListFragmentTestable(PreferenceManager preferenceManager,
+        private ApplicationListFragmentTestable(PreferenceManager preferenceManager,
                 PreferenceScreen screen) {
             this.mPreferenceManager = preferenceManager;
             this.mPreferenceScreen = screen;
@@ -117,8 +114,8 @@ public class ApplicationListFragmentTest {
         @Override
         public void buildApplicationList(Context context,
                 ApplicationFeatureProvider.ListOfAppsCallback callback) {
-            final List<UserAppInfo> apps = new ArrayList<>();
             final UserInfo user = new UserInfo(USER_ID, "main", UserInfo.FLAG_ADMIN);
+            final List<UserAppInfo> apps = new ArrayList<>();
             apps.add(new UserAppInfo(user, buildInfo(USER_APP_UID, APP, 0, 0)));
             callback.onListOfAppsResult(apps);
         }

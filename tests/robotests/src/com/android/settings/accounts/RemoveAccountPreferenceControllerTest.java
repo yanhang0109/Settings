@@ -15,6 +15,16 @@
  */
 package com.android.settings.accounts;
 
+import static org.mockito.Answers.RETURNS_DEEP_STUBS;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
@@ -22,44 +32,42 @@ import android.accounts.AuthenticatorDescription;
 import android.app.Activity;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
+import android.content.ComponentName;
 import android.content.Context;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.UserHandle;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v14.preference.PreferenceFragment;
+import android.os.UserManager;
+import androidx.preference.PreferenceFragment;
+import androidx.preference.PreferenceManager;
+import androidx.preference.PreferenceScreen;
 import android.widget.Button;
 
-import com.android.settings.AccessiblePreferenceCategory;
 import com.android.settings.R;
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
 import com.android.settings.applications.LayoutPreference;
-import com.android.settings.search.SearchIndexableRaw;
-import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 import com.android.settings.testutils.shadow.ShadowAccountManager;
 import com.android.settings.testutils.shadow.ShadowContentResolver;
+import com.android.settings.testutils.shadow.ShadowDevicePolicyManager;
+import com.android.settings.testutils.shadow.ShadowUserManager;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowApplication;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Answers.RETURNS_DEEP_STUBS;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import java.util.ArrayList;
+import java.util.List;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
+@Config(shadows = {
+        ShadowUserManager.class,
+        ShadowDevicePolicyManager.class
+})
 public class RemoveAccountPreferenceControllerTest {
 
     private static final String KEY_REMOVE_ACCOUNT = "remove_account";
@@ -67,8 +75,10 @@ public class RemoveAccountPreferenceControllerTest {
 
     @Mock(answer = RETURNS_DEEP_STUBS)
     private AccountManager mAccountManager;
-    @Mock(answer = RETURNS_DEEP_STUBS)
+    @Mock
     private PreferenceFragment mFragment;
+    @Mock
+    private PreferenceManager mPreferenceManager;
     @Mock
     private PreferenceScreen mScreen;
     @Mock
@@ -78,24 +88,23 @@ public class RemoveAccountPreferenceControllerTest {
     @Mock
     private LayoutPreference mPreference;
 
-    private Context mContext;
     private RemoveAccountPreferenceController mController;
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        ShadowApplication shadowContext = ShadowApplication.getInstance();
-        shadowContext.setSystemService(Context.ACCOUNT_SERVICE, mAccountManager);
-        mContext = spy(shadowContext.getApplicationContext());
+        ShadowApplication.getInstance().setSystemService(Context.ACCOUNT_SERVICE, mAccountManager);
 
         when(mFragment.getPreferenceScreen()).thenReturn(mScreen);
-        when(mFragment.getPreferenceManager().getContext()).thenReturn(mContext);
+        when(mFragment.getPreferenceManager()).thenReturn(mPreferenceManager);
+        when(mPreferenceManager.getContext()).thenReturn(RuntimeEnvironment.application);
         when(mFragment.getFragmentManager()).thenReturn(mFragmentManager);
         when(mFragmentManager.beginTransaction()).thenReturn(mFragmentTransaction);
-        when(mAccountManager.getAuthenticatorTypesAsUser(anyInt())).thenReturn(
-            new AuthenticatorDescription[0]);
+        when(mAccountManager.getAuthenticatorTypesAsUser(anyInt()))
+                .thenReturn(new AuthenticatorDescription[0]);
         when(mAccountManager.getAccountsAsUser(anyInt())).thenReturn(new Account[0]);
-        mController = new RemoveAccountPreferenceController(mContext, mFragment);
+        mController = new RemoveAccountPreferenceController(RuntimeEnvironment.application,
+                mFragment);
     }
 
     @Test
@@ -115,8 +124,33 @@ public class RemoveAccountPreferenceControllerTest {
         mController.onClick(null);
 
         verify(mFragmentTransaction).add(
-            any(RemoveAccountPreferenceController.ConfirmRemoveAccountDialog.class),
-            eq(TAG_REMOVE_ACCOUNT_DIALOG));
+                any(RemoveAccountPreferenceController.ConfirmRemoveAccountDialog.class),
+                eq(TAG_REMOVE_ACCOUNT_DIALOG));
+    }
+
+    @Test
+    public void onClick_shouldNotStartConfirmDialogWhenModifyAccountsIsDisallowed() {
+        when(mFragment.isAdded()).thenReturn(true);
+
+        final int userId = UserHandle.myUserId();
+        mController.init(new Account("test", "test"), UserHandle.of(userId));
+
+        List<UserManager.EnforcingUser> enforcingUsers = new ArrayList<>();
+        enforcingUsers.add(new UserManager.EnforcingUser(userId,
+                UserManager.RESTRICTION_SOURCE_DEVICE_OWNER));
+        ComponentName componentName = new ComponentName("test", "test");
+        // Ensure that RestrictedLockUtils.checkIfRestrictionEnforced doesn't return null.
+        ShadowUserManager.getShadow().setUserRestrictionSources(
+                UserManager.DISALLOW_MODIFY_ACCOUNTS,
+                UserHandle.of(userId),
+                enforcingUsers);
+        ShadowDevicePolicyManager.getShadow().setDeviceOwnerComponentOnAnyUser(componentName);
+
+        mController.onClick(null);
+
+        verify(mFragmentTransaction, never()).add(
+                any(RemoveAccountPreferenceController.ConfirmRemoveAccountDialog.class),
+                eq(TAG_REMOVE_ACCOUNT_DIALOG));
     }
 
     @Test
@@ -130,11 +164,11 @@ public class RemoveAccountPreferenceControllerTest {
         Account account = new Account("Account11", "com.acct1");
         UserHandle userHandle = new UserHandle(10);
         RemoveAccountPreferenceController.ConfirmRemoveAccountDialog dialog =
-            RemoveAccountPreferenceController.ConfirmRemoveAccountDialog.show(
-                    mFragment, account, userHandle);
+                RemoveAccountPreferenceController.ConfirmRemoveAccountDialog.show(
+                        mFragment, account, userHandle);
         dialog.onCreate(new Bundle());
         dialog.onClick(null, 0);
-        verify(mAccountManager).removeAccountAsUser(eq(account), any(Activity.class),
-            any(AccountManagerCallback.class), any(Handler.class), eq(userHandle));
+        verify(mAccountManager).removeAccountAsUser(eq(account), nullable(Activity.class),
+                nullable(AccountManagerCallback.class), nullable(Handler.class), eq(userHandle));
     }
 }

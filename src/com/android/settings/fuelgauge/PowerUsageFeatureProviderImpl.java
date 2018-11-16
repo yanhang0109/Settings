@@ -20,6 +20,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Process;
+import android.util.SparseIntArray;
+
 import com.android.internal.os.BatterySipper;
 import com.android.internal.util.ArrayUtils;
 
@@ -32,9 +34,11 @@ public class PowerUsageFeatureProviderImpl implements PowerUsageFeatureProvider 
             PACKAGE_CALENDAR_PROVIDER, PACKAGE_SYSTEMUI};
 
     protected PackageManager mPackageManager;
+    protected Context mContext;
 
     public PowerUsageFeatureProviderImpl(Context context) {
         mPackageManager = context.getPackageManager();
+        mContext = context.getApplicationContext();
     }
 
     @Override
@@ -83,5 +87,51 @@ public class PowerUsageFeatureProviderImpl implements PowerUsageFeatureProvider 
     @Override
     public boolean isPowerAccountingToggleEnabled() {
         return true;
+    }
+
+    @Override
+    public Estimate getEnhancedBatteryPrediction(Context context) {
+        return null;
+    }
+
+    @Override
+    public SparseIntArray getEnhancedBatteryPredictionCurve(Context context, long zeroTime) {
+        return null;
+    }
+
+    @Override
+    public boolean isEnhancedBatteryPredictionEnabled(Context context) {
+        return false;
+    }
+
+    @Override
+    public String getEnhancedEstimateDebugString(String timeRemaining) {
+        return null;
+    }
+
+    @Override
+    public boolean isEstimateDebugEnabled() {
+        return false;
+    }
+
+    @Override
+    public String getOldEstimateDebugString(String timeRemaining) {
+        return null;
+    }
+
+    @Override
+    public String getAdvancedUsageScreenInfoString() {
+        return null;
+    }
+
+    @Override
+    public boolean getEarlyWarningSignal(Context context, String id) {
+        return false;
+    }
+
+    @Override
+    public boolean isSmartBatterySupported() {
+        return mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_smart_battery_available);
     }
 }

@@ -15,20 +15,42 @@
  */
 package com.android.settings.fuelgauge;
 
+import android.app.AppOpsManager;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.os.BatteryStats;
+import android.os.Bundle;
+import android.os.Build;
+import android.os.Process;
 import android.os.SystemClock;
-import android.support.annotation.IntDef;
-import android.support.annotation.Nullable;
-import android.support.annotation.VisibleForTesting;
+import android.os.UserHandle;
+import android.os.UserManager;
+import androidx.annotation.IntDef;
+import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
+import androidx.annotation.VisibleForTesting;
+import androidx.annotation.WorkerThread;
+import android.text.TextUtils;
 import android.text.format.DateUtils;
 import android.util.Log;
 import android.util.SparseLongArray;
 
 import com.android.internal.os.BatterySipper;
 import com.android.internal.os.BatteryStatsHelper;
+import com.android.internal.util.ArrayUtils;
+import com.android.settings.R;
+import com.android.settings.fuelgauge.anomaly.Anomaly;
+import com.android.settings.fuelgauge.batterytip.AnomalyInfo;
+import com.android.settings.fuelgauge.batterytip.StatsManagerConfig;
 import com.android.settings.overlay.FeatureFactory;
+
+import com.android.settingslib.fuelgauge.PowerWhitelistBackend;
+import com.android.settingslib.utils.PowerUtil;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -40,24 +62,32 @@ import java.util.List;
  * Utils for battery operation
  */
 public class BatteryUtils {
+    public static final int UID_NULL = -1;
+    public static final int SDK_NULL = -1;
+
     @Retention(RetentionPolicy.SOURCE)
-    @IntDef({StatusType.FOREGROUND,
+    @IntDef({StatusType.SCREEN_USAGE,
+            StatusType.FOREGROUND,
             StatusType.BACKGROUND,
             StatusType.ALL
     })
     public @interface StatusType {
-        int FOREGROUND = 0;
-        int BACKGROUND = 1;
-        int ALL = 2;
+        int SCREEN_USAGE = 0;
+        int FOREGROUND = 1;
+        int BACKGROUND = 2;
+        int ALL = 3;
     }
 
     private static final String TAG = "BatteryUtils";
 
     private static final int MIN_POWER_THRESHOLD_MILLI_AMP = 5;
+
     private static final int SECONDS_IN_HOUR = 60 * 60;
     private static BatteryUtils sInstance;
-
     private PackageManager mPackageManager;
+
+    private AppOpsManager mAppOpsManager;
+    private Context mContext;
     @VisibleForTesting
     PowerUsageFeatureProvider mPowerUsageFeatureProvider;
 
@@ -70,7 +100,9 @@ public class BatteryUtils {
 
     @VisibleForTesting
     BatteryUtils(Context context) {
+        mContext = context.getApplicationContext();
         mPackageManager = context.getPackageManager();
+        mAppOpsManager = (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
         mPowerUsageFeatureProvider = FeatureFactory.getFactory(
                 context).getPowerUsageFeatureProvider(context);
     }
@@ -82,6 +114,8 @@ public class BatteryUtils {
         }
 
         switch (type) {
+            case StatusType.SCREEN_USAGE:
+                return getScreenUsageTimeMs(uid, which);
             case StatusType.FOREGROUND:
                 return getProcessForegroundTimeMs(uid, which);
             case StatusType.BACKGROUND:
@@ -93,18 +127,7 @@ public class BatteryUtils {
         return 0;
     }
 
-    private long getProcessBackgroundTimeMs(BatteryStats.Uid uid, int which) {
-        final long rawRealTimeUs = convertMsToUs(SystemClock.elapsedRealtime());
-        final long timeUs = uid.getProcessStateTime(
-                BatteryStats.Uid.PROCESS_STATE_BACKGROUND, rawRealTimeUs, which);
-
-        Log.v(TAG, "package: " + mPackageManager.getNameForUid(uid.getUid()));
-        Log.v(TAG, "background time(us): " + timeUs);
-        return convertUsToMs(timeUs);
-    }
-
-    private long getProcessForegroundTimeMs(BatteryStats.Uid uid, int which) {
-        final long rawRealTimeUs = convertMsToUs(SystemClock.elapsedRealtime());
+    private long getScreenUsageTimeMs(BatteryStats.Uid uid, int which, long rawRealTimeUs) {
         final int foregroundTypes[] = {BatteryStats.Uid.PROCESS_STATE_TOP};
         Log.v(TAG, "package: " + mPackageManager.getNameForUid(uid.getUid()));
 
@@ -116,7 +139,31 @@ public class BatteryUtils {
         }
         Log.v(TAG, "foreground time(us): " + timeUs);
 
-        return convertUsToMs(timeUs);
+        // Return the min value of STATE_TOP time and foreground activity time, since both of these
+        // time have some errors
+        return PowerUtil.convertUsToMs(
+                Math.min(timeUs, getForegroundActivityTotalTimeUs(uid, rawRealTimeUs)));
+    }
+
+    private long getScreenUsageTimeMs(BatteryStats.Uid uid, int which) {
+        final long rawRealTimeUs = PowerUtil.convertMsToUs(SystemClock.elapsedRealtime());
+        return getScreenUsageTimeMs(uid, which, rawRealTimeUs);
+    }
+
+    private long getProcessBackgroundTimeMs(BatteryStats.Uid uid, int which) {
+        final long rawRealTimeUs = PowerUtil.convertMsToUs(SystemClock.elapsedRealtime());
+        final long timeUs = uid.getProcessStateTime(
+                BatteryStats.Uid.PROCESS_STATE_BACKGROUND, rawRealTimeUs, which);
+
+        Log.v(TAG, "package: " + mPackageManager.getNameForUid(uid.getUid()));
+        Log.v(TAG, "background time(us): " + timeUs);
+        return PowerUtil.convertUsToMs(timeUs);
+    }
+
+    private long getProcessForegroundTimeMs(BatteryStats.Uid uid, int which) {
+        final long rawRealTimeUs = PowerUtil.convertMsToUs(SystemClock.elapsedRealtime());
+        return getScreenUsageTimeMs(uid, which, rawRealTimeUs)
+                + PowerUtil.convertUsToMs(getForegroundServiceTotalTimeUs(uid, rawRealTimeUs));
     }
 
     /**
@@ -138,7 +185,8 @@ public class BatteryUtils {
                         && sipper.drainType != BatterySipper.DrainType.SCREEN
                         && sipper.drainType != BatterySipper.DrainType.UNACCOUNTED
                         && sipper.drainType != BatterySipper.DrainType.BLUETOOTH
-                        && sipper.drainType != BatterySipper.DrainType.WIFI) {
+                        && sipper.drainType != BatterySipper.DrainType.WIFI
+                        && sipper.drainType != BatterySipper.DrainType.IDLE) {
                     // Don't add it if it is overcounted, unaccounted, wifi, bluetooth, or screen
                     proportionalSmearPowerMah += sipper.totalPowerMah;
                 }
@@ -160,19 +208,24 @@ public class BatteryUtils {
      */
     @VisibleForTesting
     void smearScreenBatterySipper(List<BatterySipper> sippers, BatterySipper screenSipper) {
-        final long rawRealtimeMs = SystemClock.elapsedRealtime();
         long totalActivityTimeMs = 0;
         final SparseLongArray activityTimeArray = new SparseLongArray();
         for (int i = 0, size = sippers.size(); i < size; i++) {
             final BatteryStats.Uid uid = sippers.get(i).uidObj;
             if (uid != null) {
-                final long timeMs = getForegroundActivityTotalTimeMs(uid, rawRealtimeMs);
+                final long timeMs = getProcessTimeMs(StatusType.SCREEN_USAGE, uid,
+                        BatteryStats.STATS_SINCE_CHARGED);
                 activityTimeArray.put(uid.getUid(), timeMs);
                 totalActivityTimeMs += timeMs;
             }
         }
 
         if (totalActivityTimeMs >= 10 * DateUtils.MINUTE_IN_MILLIS) {
+            if (screenSipper == null) {
+                Log.e(TAG, "screen sipper is null even when app screen time is not zero");
+                return;
+            }
+
             final double screenPowerMah = screenSipper.totalPowerMah;
             for (int i = 0, size = sippers.size(); i < size; i++) {
                 final BatterySipper sipper = sippers.get(i);
@@ -221,8 +274,70 @@ public class BatteryUtils {
     }
 
     /**
+     * Calculate the whole running time in the state {@code statsType}
+     *
+     * @param batteryStatsHelper utility class that contains the data
+     * @param statsType          state that we want to calculate the time for
+     * @return the running time in millis
+     */
+    public long calculateRunningTimeBasedOnStatsType(BatteryStatsHelper batteryStatsHelper,
+            int statsType) {
+        final long elapsedRealtimeUs = PowerUtil.convertMsToUs(
+                SystemClock.elapsedRealtime());
+        // Return the battery time (millisecond) on status mStatsType
+        return PowerUtil.convertUsToMs(
+                batteryStatsHelper.getStats().computeBatteryRealtime(elapsedRealtimeUs, statsType));
+
+    }
+
+    /**
+     * Find the package name for a {@link android.os.BatteryStats.Uid}
+     *
+     * @param uid id to get the package name
+     * @return the package name. If there are multiple packages related to
+     * given id, return the first one. Or return null if there are no known
+     * packages with the given id
+     * @see PackageManager#getPackagesForUid(int)
+     */
+    public String getPackageName(int uid) {
+        final String[] packageNames = mPackageManager.getPackagesForUid(uid);
+
+        return ArrayUtils.isEmpty(packageNames) ? null : packageNames[0];
+    }
+
+    /**
+     * Find the targetSdkVersion for package with name {@code packageName}
+     *
+     * @return the targetSdkVersion, or {@link #SDK_NULL} if {@code packageName} doesn't exist
+     */
+    public int getTargetSdkVersion(final String packageName) {
+        try {
+            ApplicationInfo info = mPackageManager.getApplicationInfo(packageName,
+                    PackageManager.GET_META_DATA);
+
+            return info.targetSdkVersion;
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.e(TAG, "Cannot find package: " + packageName, e);
+        }
+
+        return SDK_NULL;
+    }
+
+    /**
+     * Check whether background restriction is enabled
+     */
+    public boolean isBackgroundRestrictionEnabled(final int targetSdkVersion, final int uid,
+            final String packageName) {
+        if (targetSdkVersion >= Build.VERSION_CODES.O) {
+            return true;
+        }
+        final int mode = mAppOpsManager
+                .checkOpNoThrow(AppOpsManager.OP_RUN_IN_BACKGROUND, uid, packageName);
+        return mode == AppOpsManager.MODE_IGNORED || mode == AppOpsManager.MODE_ERRORED;
+    }
+
+    /**
      * Sort the {@code usageList} based on {@link BatterySipper#totalPowerMah}
-     * @param usageList
      */
     public void sortUsageList(List<BatterySipper> usageList) {
         Collections.sort(usageList, new Comparator<BatterySipper>() {
@@ -246,27 +361,253 @@ public class BatteryUtils {
 
     }
 
-    private long convertUsToMs(long timeUs) {
-        return timeUs / 1000;
+    /**
+     * Calculate the screen usage time since last full charge.
+     *
+     * @param batteryStatsHelper utility class that contains the screen usage data
+     * @return time in millis
+     */
+    public long calculateScreenUsageTime(BatteryStatsHelper batteryStatsHelper) {
+        final BatterySipper sipper = findBatterySipperByType(
+                batteryStatsHelper.getUsageList(), BatterySipper.DrainType.SCREEN);
+        return sipper != null ? sipper.usageTimeMs : 0;
     }
 
-    private long convertMsToUs(long timeMs) {
-        return timeMs * 1000;
+    public static void logRuntime(String tag, String message, long startTime) {
+        Log.d(tag, message + ": " + (System.currentTimeMillis() - startTime) + "ms");
+    }
+
+    /**
+     * Find package uid from package name
+     *
+     * @param packageName used to find the uid
+     * @return uid for packageName, or {@link #UID_NULL} if exception happens or
+     * {@code packageName} is null
+     */
+    public int getPackageUid(String packageName) {
+        try {
+            return packageName == null ? UID_NULL : mPackageManager.getPackageUid(packageName,
+                    PackageManager.GET_META_DATA);
+        } catch (PackageManager.NameNotFoundException e) {
+            return UID_NULL;
+        }
+    }
+
+    @StringRes
+    public int getSummaryResIdFromAnomalyType(@Anomaly.AnomalyType int type) {
+        switch (type) {
+            case Anomaly.AnomalyType.WAKE_LOCK:
+                return R.string.battery_abnormal_wakelock_summary;
+            case Anomaly.AnomalyType.WAKEUP_ALARM:
+                return R.string.battery_abnormal_wakeup_alarm_summary;
+            case Anomaly.AnomalyType.BLUETOOTH_SCAN:
+                return R.string.battery_abnormal_location_summary;
+            default:
+                throw new IllegalArgumentException("Incorrect anomaly type: " + type);
+        }
+    }
+
+    public void setForceAppStandby(int uid, String packageName,
+            int mode) {
+        final boolean isPreOApp = isPreOApp(packageName);
+        if (isPreOApp) {
+            // Control whether app could run in the background if it is pre O app
+            mAppOpsManager.setMode(AppOpsManager.OP_RUN_IN_BACKGROUND, uid, packageName, mode);
+        }
+        // Control whether app could run jobs in the background
+        mAppOpsManager.setMode(AppOpsManager.OP_RUN_ANY_IN_BACKGROUND, uid, packageName, mode);
+    }
+
+    public boolean isForceAppStandbyEnabled(int uid, String packageName) {
+        return mAppOpsManager.checkOpNoThrow(AppOpsManager.OP_RUN_ANY_IN_BACKGROUND, uid,
+                packageName) == AppOpsManager.MODE_IGNORED;
+    }
+
+    public void initBatteryStatsHelper(BatteryStatsHelper statsHelper, Bundle bundle,
+            UserManager userManager) {
+        statsHelper.create(bundle);
+        statsHelper.clearStats();
+        statsHelper.refreshStats(BatteryStats.STATS_SINCE_CHARGED, userManager.getUserProfiles());
+    }
+
+    @WorkerThread
+    public BatteryInfo getBatteryInfo(final BatteryStatsHelper statsHelper, final String tag) {
+        final long startTime = System.currentTimeMillis();
+
+        // Stuff we always need to get BatteryInfo
+        final Intent batteryBroadcast = mContext.registerReceiver(null,
+                new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        final long elapsedRealtimeUs = PowerUtil.convertMsToUs(
+                SystemClock.elapsedRealtime());
+        final BatteryStats stats = statsHelper.getStats();
+        BatteryInfo batteryInfo;
+
+        final Estimate estimate;
+        // Get enhanced prediction if available
+        if (mPowerUsageFeatureProvider != null &&
+                mPowerUsageFeatureProvider.isEnhancedBatteryPredictionEnabled(mContext)) {
+            estimate = mPowerUsageFeatureProvider.getEnhancedBatteryPrediction(mContext);
+        } else {
+            estimate = new Estimate(
+                    PowerUtil.convertUsToMs(stats.computeBatteryTimeRemaining(elapsedRealtimeUs)),
+                    false /* isBasedOnUsage */,
+                    Estimate.AVERAGE_TIME_TO_DISCHARGE_UNKNOWN);
+        }
+
+        BatteryUtils.logRuntime(tag, "BatteryInfoLoader post query", startTime);
+        batteryInfo = BatteryInfo.getBatteryInfo(mContext, batteryBroadcast, stats,
+                estimate, elapsedRealtimeUs, false /* shortString */);
+        BatteryUtils.logRuntime(tag, "BatteryInfoLoader.loadInBackground", startTime);
+
+        return batteryInfo;
+    }
+
+    /**
+     * Find the {@link BatterySipper} with the corresponding {@link BatterySipper.DrainType}
+     */
+    public BatterySipper findBatterySipperByType(List<BatterySipper> usageList,
+            BatterySipper.DrainType type) {
+        for (int i = 0, size = usageList.size(); i < size; i++) {
+            final BatterySipper sipper = usageList.get(i);
+            if (sipper.drainType == type) {
+                return sipper;
+            }
+        }
+        return null;
     }
 
     private boolean isDataCorrupted() {
-        return mPackageManager == null;
+        return mPackageManager == null || mAppOpsManager == null;
     }
 
     @VisibleForTesting
-    long getForegroundActivityTotalTimeMs(BatteryStats.Uid uid, long rawRealtimeMs) {
+    long getForegroundActivityTotalTimeUs(BatteryStats.Uid uid, long rawRealtimeUs) {
         final BatteryStats.Timer timer = uid.getForegroundActivityTimer();
         if (timer != null) {
-            return timer.getTotalTimeLocked(rawRealtimeMs, BatteryStats.STATS_SINCE_CHARGED);
+            return timer.getTotalTimeLocked(rawRealtimeUs, BatteryStats.STATS_SINCE_CHARGED);
         }
 
         return 0;
     }
 
+    @VisibleForTesting
+    long getForegroundServiceTotalTimeUs(BatteryStats.Uid uid, long rawRealtimeUs) {
+        final BatteryStats.Timer timer = uid.getForegroundServiceTimer();
+        if (timer != null) {
+            return timer.getTotalTimeLocked(rawRealtimeUs, BatteryStats.STATS_SINCE_CHARGED);
+        }
+
+        return 0;
+    }
+
+    public boolean isPreOApp(final String packageName) {
+        try {
+            ApplicationInfo info = mPackageManager.getApplicationInfo(packageName,
+                    PackageManager.GET_META_DATA);
+
+            return info.targetSdkVersion < Build.VERSION_CODES.O;
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.e(TAG, "Cannot find package: " + packageName, e);
+        }
+
+        return false;
+    }
+
+    public boolean isPreOApp(final String[] packageNames) {
+        if (ArrayUtils.isEmpty(packageNames)) {
+            return false;
+        }
+
+        for (String packageName : packageNames) {
+            if (isPreOApp(packageName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Return {@code true} if we should hide anomaly app represented by {@code uid}
+     */
+    public boolean shouldHideAnomaly(PowerWhitelistBackend powerWhitelistBackend, int uid,
+            AnomalyInfo anomalyInfo) {
+        final String[] packageNames = mPackageManager.getPackagesForUid(uid);
+        if (ArrayUtils.isEmpty(packageNames)) {
+            // Don't show it if app has been uninstalled
+            return true;
+        }
+
+        return isSystemUid(uid) || powerWhitelistBackend.isWhitelisted(packageNames)
+                || (isSystemApp(mPackageManager, packageNames) && !hasLauncherEntry(packageNames))
+                || (isExcessiveBackgroundAnomaly(anomalyInfo) && !isPreOApp(packageNames));
+    }
+
+    private boolean isExcessiveBackgroundAnomaly(AnomalyInfo anomalyInfo) {
+        return anomalyInfo.anomalyType
+                == StatsManagerConfig.AnomalyType.EXCESSIVE_BACKGROUND_SERVICE;
+    }
+
+    private boolean isSystemUid(int uid) {
+        final int appUid = UserHandle.getAppId(uid);
+        return appUid >= Process.ROOT_UID && appUid < Process.FIRST_APPLICATION_UID;
+    }
+
+    private boolean isSystemApp(PackageManager packageManager, String[] packageNames) {
+        for (String packageName : packageNames) {
+            try {
+                final ApplicationInfo info = packageManager.getApplicationInfo(packageName,
+                        0 /* flags */);
+                if ((info.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
+                    return true;
+                }
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.e(TAG, "Package not found: " + packageName, e);
+            }
+        }
+
+        return false;
+    }
+
+    private boolean hasLauncherEntry(String[] packageNames) {
+        final Intent launchIntent = new Intent(Intent.ACTION_MAIN, null);
+        launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+
+        // If we do not specify MATCH_DIRECT_BOOT_AWARE or
+        // MATCH_DIRECT_BOOT_UNAWARE, system will derive and update the flags
+        // according to the user's lock state. When the user is locked,
+        // components
+        // with ComponentInfo#directBootAware == false will be filtered. We should
+        // explicitly include both direct boot aware and unaware components here.
+        final List<ResolveInfo> resolveInfos = mPackageManager.queryIntentActivities(launchIntent,
+                PackageManager.MATCH_DISABLED_COMPONENTS
+                        | PackageManager.MATCH_DIRECT_BOOT_AWARE
+                        | PackageManager.MATCH_DIRECT_BOOT_UNAWARE
+                        | PackageManager.MATCH_SYSTEM_ONLY);
+        for (int i = 0, size = resolveInfos.size(); i < size; i++) {
+            final ResolveInfo resolveInfo = resolveInfos.get(i);
+            if (ArrayUtils.contains(packageNames, resolveInfo.activityInfo.packageName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Return version number of an app represented by {@code packageName}, and return -1 if not
+     * found.
+     */
+    public long getAppLongVersionCode(String packageName) {
+        try {
+            final PackageInfo packageInfo = mPackageManager.getPackageInfo(packageName,
+                    0 /* flags */);
+            return packageInfo.getLongVersionCode();
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.e(TAG, "Cannot find package: " + packageName, e);
+        }
+
+        return -1L;
+    }
 }
 

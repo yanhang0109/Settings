@@ -16,14 +16,19 @@
 
 package com.android.settings;
 
+import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
+
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AuthenticatorDescription;
+import android.annotation.Nullable;
 import android.app.Activity;
-import android.app.FragmentManager;
+import android.content.ComponentName;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.pm.UserInfo;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
@@ -32,7 +37,10 @@ import android.os.Environment;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.annotation.VisibleForTesting;
+import android.provider.Settings;
+import androidx.annotation.VisibleForTesting;
+import android.telephony.euicc.EuiccManager;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -47,12 +55,14 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import com.android.settings.widget.CarrierDemoPasswordDialogFragment;
+import com.android.settings.core.InstrumentedFragment;
+import com.android.settings.core.SubSettingLauncher;
+import com.android.settings.enterprise.ActionDisabledByAdminDialogHelper;
+import com.android.settings.password.ChooseLockSettingsHelper;
+import com.android.settings.password.ConfirmLockPattern;
 import com.android.settingslib.RestrictedLockUtils;
 
 import java.util.List;
-
-import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 /**
  * Confirm and execute a reset of the device to a clean "just out of the box"
@@ -64,27 +74,36 @@ import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
  *
  * This is the initial screen.
  */
-public class MasterClear extends OptionsMenuFragment
-        implements CarrierDemoPasswordDialogFragment.Callback {
+public class MasterClear extends InstrumentedFragment implements OnGlobalLayoutListener {
     private static final String TAG = "MasterClear";
 
-    private static final int KEYGUARD_REQUEST = 55;
+    @VisibleForTesting static final int KEYGUARD_REQUEST = 55;
+    @VisibleForTesting static final int CREDENTIAL_CONFIRM_REQUEST = 56;
+
+    private static final String KEY_SHOW_ESIM_RESET_CHECKBOX
+            = "masterclear.allow_retain_esim_profiles_after_fdr";
 
     static final String ERASE_EXTERNAL_EXTRA = "erase_sd";
+    static final String ERASE_ESIMS_EXTRA = "erase_esim";
 
     private View mContentView;
-    private Button mInitiateButton;
+    @VisibleForTesting Button mInitiateButton;
     private View mExternalStorageContainer;
-    private CheckBox mExternalStorage;
-    private ScrollView mScrollView;
+    @VisibleForTesting CheckBox mExternalStorage;
+    private View mEsimStorageContainer;
+    @VisibleForTesting CheckBox mEsimStorage;
+    @VisibleForTesting ScrollView mScrollView;
 
-    private final OnGlobalLayoutListener mOnGlobalLayoutListener = new OnGlobalLayoutListener() {
-        @Override
-        public void onGlobalLayout() {
-            mScrollView.getViewTreeObserver().removeOnGlobalLayoutListener(mOnGlobalLayoutListener);
-            mInitiateButton.setEnabled(hasReachedBottom(mScrollView));
-        }
-    };
+    @Override
+    public void onGlobalLayout() {
+        mInitiateButton.setEnabled(hasReachedBottom(mScrollView));
+    }
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getActivity().setTitle(R.string.master_clear_short_title);
+    }
 
     /**
      * Keyguard validation is run using the standard {@link ConfirmLockPattern}
@@ -95,58 +114,134 @@ public class MasterClear extends OptionsMenuFragment
     private boolean runKeyguardConfirmation(int request) {
         Resources res = getActivity().getResources();
         return new ChooseLockSettingsHelper(getActivity(), this).launchConfirmationActivity(
-                request, res.getText(R.string.master_clear_title));
+                request, res.getText(R.string.master_clear_short_title));
+    }
+
+    @VisibleForTesting
+    boolean isValidRequestCode(int requestCode) {
+        return !((requestCode != KEYGUARD_REQUEST) && (requestCode != CREDENTIAL_CONFIRM_REQUEST));
     }
 
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        onActivityResultInternal(requestCode, resultCode, data);
+    }
 
-        if (requestCode != KEYGUARD_REQUEST) {
+    /*
+     * Internal method that allows easy testing without dealing with super references.
+     */
+    @VisibleForTesting
+    void onActivityResultInternal(int requestCode, int resultCode, Intent data) {
+        if (!isValidRequestCode(requestCode)) {
             return;
         }
 
-        // If the user entered a valid keyguard trace, present the final
-        // confirmation prompt; otherwise, go back to the initial state.
-        if (resultCode == Activity.RESULT_OK) {
-            showFinalConfirmation();
-        } else {
+        if (resultCode != Activity.RESULT_OK) {
             establishInitialState();
+            return;
+        }
+
+        Intent intent = null;
+        // If returning from a Keyguard request, try to show an account confirmation request if
+        // applciable.
+        if (CREDENTIAL_CONFIRM_REQUEST != requestCode
+                && (intent = getAccountConfirmationIntent()) != null) {
+            showAccountCredentialConfirmation(intent);
+        } else {
+            showFinalConfirmation();
         }
     }
 
-    private void showFinalConfirmation() {
-        Bundle args = new Bundle();
+    @VisibleForTesting
+    void showFinalConfirmation() {
+        final Bundle args = new Bundle();
         args.putBoolean(ERASE_EXTERNAL_EXTRA, mExternalStorage.isChecked());
-        ((SettingsActivity) getActivity()).startPreferencePanel(
-                this, MasterClearConfirm.class.getName(),
-                args, R.string.master_clear_confirm_title, null, null, 0);
+        args.putBoolean(ERASE_ESIMS_EXTRA, mEsimStorage.isChecked());
+        new SubSettingLauncher(getContext())
+                .setDestination(MasterClearConfirm.class.getName())
+                .setArguments(args)
+                .setTitle(R.string.master_clear_confirm_title)
+                .setSourceMetricsCategory(getMetricsCategory())
+                .launch();
+    }
+
+    @VisibleForTesting
+    void showAccountCredentialConfirmation(Intent intent) {
+        startActivityForResult(intent, CREDENTIAL_CONFIRM_REQUEST);
+    }
+
+    @VisibleForTesting
+    Intent getAccountConfirmationIntent() {
+        final Context context = getActivity();
+        final String accountType = context.getString(R.string.account_type);
+        final String packageName = context.getString(R.string.account_confirmation_package);
+        final String className = context.getString(R.string.account_confirmation_class);
+        if (TextUtils.isEmpty(accountType)
+                || TextUtils.isEmpty(packageName)
+                || TextUtils.isEmpty(className)) {
+            Log.i(TAG, "Resources not set for account confirmation.");
+            return null;
+        }
+        final AccountManager am = AccountManager.get(context);
+        Account[] accounts = am.getAccountsByType(accountType);
+        if (accounts != null && accounts.length > 0) {
+            final Intent requestAccountConfirmation = new Intent()
+                .setPackage(packageName)
+                .setComponent(new ComponentName(packageName, className));
+            // Check to make sure that the intent is supported.
+            final PackageManager pm = context.getPackageManager();
+            final ResolveInfo resolution = pm.resolveActivity(requestAccountConfirmation, 0);
+            if (resolution != null
+                    && resolution.activityInfo != null
+                    && packageName.equals(resolution.activityInfo.packageName)) {
+                // Note that we need to check the packagename to make sure that an Activity resolver
+                // wasn't returned.
+                return requestAccountConfirmation;
+            } else {
+                Log.i(TAG, "Unable to resolve Activity: " + packageName + "/" + className);
+            }
+        } else {
+            Log.d(TAG, "No " + accountType + " accounts installed!");
+        }
+        return null;
     }
 
     /**
      * If the user clicks to begin the reset sequence, we next require a
      * keyguard confirmation if the user has currently enabled one.  If there
      * is no keyguard available, we simply go to the final confirmation prompt.
+     *
+     * If the user is in demo mode, route to the demo mode app for confirmation.
      */
-    private final Button.OnClickListener mInitiateListener = new Button.OnClickListener() {
+    @VisibleForTesting
+    protected final Button.OnClickListener mInitiateListener = new Button.OnClickListener() {
 
-        public void onClick(View v) {
-            if ( Utils.isCarrierDemoUser(v.getContext())) {
-                // Require the carrier password before displaying the final confirmation.
-                final FragmentManager fm = getChildFragmentManager();
-                if (fm != null && !fm.isDestroyed()) {
-                    new CarrierDemoPasswordDialogFragment().show(fm, null /* tag */);
+        public void onClick(View view) {
+            final Context context = view.getContext();
+            if (Utils.isDemoUser(context)) {
+                final ComponentName componentName = Utils.getDeviceOwnerComponent(context);
+                if (componentName != null) {
+                    final Intent requestFactoryReset = new Intent()
+                            .setPackage(componentName.getPackageName())
+                            .setAction(Intent.ACTION_FACTORY_RESET);
+                    context.startActivity(requestFactoryReset);
                 }
-            } else if (!runKeyguardConfirmation(KEYGUARD_REQUEST)) {
+                return;
+            }
+
+            if (runKeyguardConfirmation(KEYGUARD_REQUEST)) {
+                return;
+            }
+
+            Intent intent = getAccountConfirmationIntent();
+            if (intent != null) {
+                showAccountCredentialConfirmation(intent);
+            } else {
                 showFinalConfirmation();
             }
         }
     };
-
-    @Override
-    public void onPasswordVerified() {
-        showFinalConfirmation();
-    }
 
     /**
      * In its initial state, the activity presents a button for the user to
@@ -160,12 +255,18 @@ public class MasterClear extends OptionsMenuFragment
      * time, then simply reuse the inflated views directly whenever we need
      * to change contents.
      */
-    private void establishInitialState() {
-        mInitiateButton = (Button) mContentView.findViewById(R.id.initiate_master_clear);
+    @VisibleForTesting
+    void establishInitialState() {
+        mInitiateButton = mContentView.findViewById(R.id.initiate_master_clear);
         mInitiateButton.setOnClickListener(mInitiateListener);
         mExternalStorageContainer = mContentView.findViewById(R.id.erase_external_container);
-        mExternalStorage = (CheckBox) mContentView.findViewById(R.id.erase_external);
-        mScrollView = (ScrollView) mContentView.findViewById(R.id.master_clear_scrollview);
+        mExternalStorage = mContentView.findViewById(R.id.erase_external);
+        mEsimStorageContainer = mContentView.findViewById(R.id.erase_esim_container);
+        mEsimStorage = mContentView.findViewById(R.id.erase_esim);
+        if (mScrollView != null) {
+            mScrollView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+        }
+        mScrollView = mContentView.findViewById(R.id.master_clear_scrollview);
 
         /*
          * If the external storage is emulated, it will be erased with a factory
@@ -198,10 +299,32 @@ public class MasterClear extends OptionsMenuFragment
             });
         }
 
+        if (showWipeEuicc()) {
+            if (showWipeEuiccCheckbox()) {
+                TextView title = mContentView.findViewById(R.id.erase_esim_title);
+                title.setText(R.string.erase_esim_storage);
+                mEsimStorageContainer.setVisibility(View.VISIBLE);
+                mEsimStorageContainer.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        mEsimStorage.toggle();
+                    }
+                });
+            } else {
+                final View esimAlsoErased = mContentView.findViewById(R.id.also_erases_esim);
+                esimAlsoErased.setVisibility(View.VISIBLE);
+
+                final View noCancelMobilePlan = mContentView.findViewById(
+                        R.id.no_cancel_mobile_plan);
+                noCancelMobilePlan.setVisibility(View.VISIBLE);
+                mEsimStorage.setChecked(true /* checked */);
+            }
+        }
+
         final UserManager um = (UserManager) getActivity().getSystemService(Context.USER_SERVICE);
         loadAccountList(um);
-        StringBuffer contentDescription = new StringBuffer();
-        View masterClearContainer = mContentView.findViewById(R.id.master_clear_container);
+        final StringBuffer contentDescription = new StringBuffer();
+        final View masterClearContainer = mContentView.findViewById(R.id.master_clear_container);
         getContentDescription(masterClearContainer, contentDescription);
         masterClearContainer.setContentDescription(contentDescription);
 
@@ -212,12 +335,43 @@ public class MasterClear extends OptionsMenuFragment
                 int oldScrollY) {
                 if (v instanceof ScrollView && hasReachedBottom((ScrollView) v)) {
                     mInitiateButton.setEnabled(true);
+                    mScrollView.setOnScrollChangeListener(null);
                 }
             }
         });
 
         // Set the initial state of the initiateButton
-        mScrollView.getViewTreeObserver().addOnGlobalLayoutListener(mOnGlobalLayoutListener);
+        mScrollView.getViewTreeObserver().addOnGlobalLayoutListener(this);
+    }
+
+    /**
+     * Whether to show strings indicating that the eUICC will be wiped.
+     *
+     * <p>We show the strings on any device which supports eUICC as long as the eUICC was ever
+     * provisioned (that is, at least one profile was ever downloaded onto it).
+     */
+    @VisibleForTesting
+    boolean showWipeEuicc() {
+        Context context = getContext();
+        if (!isEuiccEnabled(context)) {
+            return false;
+        }
+        ContentResolver cr = context.getContentResolver();
+        return Settings.Global.getInt(cr, Settings.Global.EUICC_PROVISIONED, 0) != 0
+                ||  Settings.Global.getInt(
+                        cr, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0;
+    }
+
+    @VisibleForTesting
+    boolean showWipeEuiccCheckbox() {
+        return SystemProperties
+                .getBoolean(KEY_SHOW_ESIM_RESET_CHECKBOX, false /* def */);
+    }
+
+    @VisibleForTesting
+    protected boolean isEuiccEnabled(Context context) {
+        EuiccManager euiccManager = (EuiccManager) context.getSystemService(Context.EUICC_SERVICE);
+        return euiccManager.isEnabled();
     }
 
     @VisibleForTesting
@@ -349,13 +503,14 @@ public class MasterClear extends OptionsMenuFragment
         final UserManager um = UserManager.get(context);
         final boolean disallow = !um.isAdminUser() || RestrictedLockUtils.hasBaseUserRestriction(
                 context, UserManager.DISALLOW_FACTORY_RESET, UserHandle.myUserId());
-        if (disallow && !Utils.isCarrierDemoUser(context)) {
+        if (disallow && !Utils.isDemoUser(context)) {
             return inflater.inflate(R.layout.master_clear_disallowed_screen, null);
         } else if (admin != null) {
-            View view = inflater.inflate(R.layout.admin_support_details_empty_view, null);
-            ShowAdminSupportDetailsDialog.setAdminSupportDetails(getActivity(), view, admin, false);
-            view.setVisibility(View.VISIBLE);
-            return view;
+            new ActionDisabledByAdminDialogHelper(getActivity())
+                    .prepareDialogBuilder(UserManager.DISALLOW_FACTORY_RESET, admin)
+                    .setOnDismissListener(__ -> getActivity().finish())
+                    .show();
+            return new View(getContext());
         }
 
         mContentView = inflater.inflate(R.layout.master_clear, null);

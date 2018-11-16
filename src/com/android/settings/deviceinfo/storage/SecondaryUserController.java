@@ -19,17 +19,18 @@ package com.android.settings.deviceinfo.storage;
 import android.content.Context;
 import android.content.pm.UserInfo;
 import android.graphics.drawable.Drawable;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.PreferenceGroup;
-import android.support.v7.preference.PreferenceScreen;
+import android.os.UserManager;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.PreferenceGroup;
+import androidx.preference.PreferenceScreen;
 import android.util.SparseArray;
 
 import com.android.settings.Utils;
-import com.android.settings.applications.UserManagerWrapper;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settings.deviceinfo.StorageItemPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,8 +39,9 @@ import java.util.List;
  * SecondaryUserController controls the preferences on the Storage screen which had to do with
  * secondary users.
  */
-public class SecondaryUserController extends PreferenceController
-        implements StorageAsyncLoader.ResultHandler, UserIconLoader.UserIconHandler {
+public class SecondaryUserController extends AbstractPreferenceController implements
+        PreferenceControllerMixin, StorageAsyncLoader.ResultHandler,
+        UserIconLoader.UserIconHandler {
     // PreferenceGroupKey to try to add our preference onto.
     private static final String TARGET_PREFERENCE_GROUP_KEY = "pref_secondary_users";
     private static final String PREFERENCE_KEY_BASE = "pref_user_";
@@ -58,9 +60,9 @@ public class SecondaryUserController extends PreferenceController
      * @param context Context for initializing the preference controllers.
      * @param userManager UserManagerWrapper for figuring out which controllers to add.
      */
-    public static List<PreferenceController> getSecondaryUserControllers(
-            Context context, UserManagerWrapper userManager) {
-        List<PreferenceController> controllers = new ArrayList<>();
+    public static List<AbstractPreferenceController> getSecondaryUserControllers(
+            Context context, UserManager userManager) {
+        List<AbstractPreferenceController> controllers = new ArrayList<>();
         UserInfo primaryUser = userManager.getPrimaryUser();
         boolean addedUser = false;
         List<UserInfo> infos = userManager.getUsers();
@@ -72,8 +74,7 @@ public class SecondaryUserController extends PreferenceController
 
             if (info == null || Utils.isProfileOf(primaryUser, info)) {
                 controllers.add(
-                        new UserProfileController(
-                                context, info, userManager, USER_PROFILE_INSERTION_LOCATION));
+                        new UserProfileController(context, info, USER_PROFILE_INSERTION_LOCATION));
                 continue;
             }
 
@@ -89,7 +90,7 @@ public class SecondaryUserController extends PreferenceController
 
     /**
      * Constructor for a given secondary user.
-     * @param context Context to initialize the underlying {@link PreferenceController}.
+     * @param context Context to initialize the underlying {@link AbstractPreferenceController}.
      * @param info {@link UserInfo} for the secondary user which this controllers covers.
      */
     @VisibleForTesting
@@ -175,7 +176,8 @@ public class SecondaryUserController extends PreferenceController
         }
     }
 
-    private static class NoSecondaryUserController extends PreferenceController {
+    private static class NoSecondaryUserController extends AbstractPreferenceController implements
+            PreferenceControllerMixin {
         public NoSecondaryUserController(Context context) {
             super(context);
         }

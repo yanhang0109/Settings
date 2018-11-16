@@ -17,16 +17,18 @@
 package com.android.settings.inputmethod;
 
 import android.content.Context;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.view.textservice.SpellCheckerInfo;
 import android.view.textservice.TextServicesManager;
 
 import com.android.settings.R;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.core.AbstractPreferenceController;
 import com.android.settingslib.inputmethod.InputMethodAndSubtypeUtil;
 
-public class SpellCheckerPreferenceController extends PreferenceController {
+public class SpellCheckerPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     public static final String KEY_SPELL_CHECKERS = "spellcheckers_settings";
 
@@ -49,7 +51,7 @@ public class SpellCheckerPreferenceController extends PreferenceController {
 
     @Override
     public boolean isAvailable() {
-        return true;
+        return mContext.getResources().getBoolean(R.bool.config_show_spellcheckers_settings);
     }
 
     @Override

@@ -30,19 +30,24 @@ import android.graphics.drawable.AnimatedVectorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.LayerDrawable;
 import android.hardware.fingerprint.FingerprintManager;
+import android.media.AudioAttributes;
 import android.os.Bundle;
 import android.os.UserHandle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.AnimationUtils;
 import android.view.animation.Interpolator;
+import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import com.android.settings.ChooseLockSettingsHelper;
 import com.android.settings.R;
 import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
+import com.android.settings.password.ChooseLockSettingsHelper;
 
 /**
  * Activity which handles the actual enrolling for fingerprint.
@@ -72,6 +77,14 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
      */
     private static final int ICON_TOUCH_COUNT_SHOW_UNTIL_DIALOG_SHOWN = 3;
 
+    private static final VibrationEffect VIBRATE_EFFECT_ERROR =
+            VibrationEffect.createWaveform(new long[] {0, 5, 55, 60}, -1);
+    private static final AudioAttributes FINGERPRINT_ENROLLING_SONFICATION_ATTRIBUTES =
+            new AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .build();
+
     private ProgressBar mProgressBar;
     private ObjectAnimator mProgressAnim;
     private TextView mStartMessage;
@@ -84,24 +97,28 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
     private FingerprintEnrollSidecar mSidecar;
     private boolean mAnimationCancelled;
     private AnimatedVectorDrawable mIconAnimationDrawable;
-    private Drawable mIconBackgroundDrawable;
-    private int mIndicatorBackgroundRestingColor;
-    private int mIndicatorBackgroundActivatedColor;
+    private AnimatedVectorDrawable mIconBackgroundBlinksDrawable;
     private boolean mRestoring;
+    private Vibrator mVibrator;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.fingerprint_enroll_enrolling);
-        setHeaderText(R.string.security_settings_fingerprint_enroll_start_title);
+        setHeaderText(R.string.security_settings_fingerprint_enroll_repeat_title);
         mStartMessage = (TextView) findViewById(R.id.start_message);
         mRepeatMessage = (TextView) findViewById(R.id.repeat_message);
         mErrorText = (TextView) findViewById(R.id.error_text);
         mProgressBar = (ProgressBar) findViewById(R.id.fingerprint_progress_bar);
+        mVibrator = getSystemService(Vibrator.class);
+
+        Button skipButton = findViewById(R.id.skip_button);
+        skipButton.setOnClickListener(this);
+
         final LayerDrawable fingerprintDrawable = (LayerDrawable) mProgressBar.getBackground();
         mIconAnimationDrawable = (AnimatedVectorDrawable)
                 fingerprintDrawable.findDrawableByLayerId(R.id.fingerprint_animation);
-        mIconBackgroundDrawable =
+        mIconBackgroundBlinksDrawable = (AnimatedVectorDrawable)
                 fingerprintDrawable.findDrawableByLayerId(R.id.fingerprint_background);
         mIconAnimationDrawable.registerAnimationCallback(mIconAnimationCallback);
         mFastOutSlowInInterpolator = AnimationUtils.loadInterpolator(
@@ -128,11 +145,6 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
                 return true;
             }
         });
-        mIndicatorBackgroundRestingColor
-                = getColor(R.color.fingerprint_indicator_background_resting);
-        mIndicatorBackgroundActivatedColor
-                = getColor(R.color.fingerprint_indicator_background_activated);
-        mIconBackgroundDrawable.setTint(mIndicatorBackgroundRestingColor);
         mRestoring = savedInstanceState != null;
     }
 
@@ -157,22 +169,6 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
         super.onEnterAnimationComplete();
         mAnimationCancelled = false;
         startIconAnimation();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (mSidecar != null) {
-            mSidecar.setListener(this);
-        }
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (mSidecar != null) {
-            mSidecar.setListener(null);
-        }
     }
 
     private void startIconAnimation() {
@@ -211,6 +207,18 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
         super.onBackPressed();
     }
 
+    @Override
+    public void onClick(View v) {
+        switch (v.getId()) {
+            case R.id.skip_button:
+                setResult(RESULT_SKIP);
+                finish();
+                break;
+            default:
+                super.onClick(v);
+        }
+    }
+
     private void animateProgress(int progress) {
         if (mProgressAnim != null) {
             mProgressAnim.cancel();
@@ -225,30 +233,7 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
     }
 
     private void animateFlash() {
-        ValueAnimator anim = ValueAnimator.ofArgb(mIndicatorBackgroundRestingColor,
-                mIndicatorBackgroundActivatedColor);
-        final ValueAnimator.AnimatorUpdateListener listener =
-                new ValueAnimator.AnimatorUpdateListener() {
-            @Override
-            public void onAnimationUpdate(ValueAnimator animation) {
-                mIconBackgroundDrawable.setTint((Integer) animation.getAnimatedValue());
-            }
-        };
-        anim.addUpdateListener(listener);
-        anim.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                ValueAnimator anim = ValueAnimator.ofArgb(mIndicatorBackgroundActivatedColor,
-                        mIndicatorBackgroundRestingColor);
-                anim.addUpdateListener(listener);
-                anim.setDuration(300);
-                anim.setInterpolator(mLinearOutSlowInInterpolator);
-                anim.start();
-            }
-        });
-        anim.setInterpolator(mFastOutSlowInInterpolator);
-        anim.setDuration(300);
-        anim.start();
+        mIconBackgroundBlinksDrawable.start();
     }
 
     private void launchFinish(byte[] token) {
@@ -271,12 +256,9 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
 
     private void updateDescription() {
         if (mSidecar.getEnrollmentSteps() == -1) {
-            setHeaderText(R.string.security_settings_fingerprint_enroll_start_title);
             mStartMessage.setVisibility(View.VISIBLE);
             mRepeatMessage.setVisibility(View.INVISIBLE);
         } else {
-            setHeaderText(R.string.security_settings_fingerprint_enroll_repeat_title,
-                    true /* force */);
             mStartMessage.setVisibility(View.INVISIBLE);
             mRepeatMessage.setVisibility(View.VISIBLE);
         }
@@ -285,7 +267,10 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
 
     @Override
     public void onEnrollmentHelp(CharSequence helpString) {
-        mErrorText.setText(helpString);
+        if (!TextUtils.isEmpty(helpString)) {
+            mErrorText.removeCallbacks(mTouchAgainRunnable);
+            showError(helpString);
+        }
     }
 
     @Override
@@ -324,6 +309,9 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
             animateProgress(progress);
         } else {
             mProgressBar.setProgress(progress);
+            if (progress >= PROGRESS_BAR_MAX) {
+                mDelayedFinishRunnable.run();
+            }
         }
     }
 
@@ -363,6 +351,9 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
             mErrorText.setAlpha(1f);
             mErrorText.setTranslationY(0f);
         }
+        if (isResumed()) {
+            mVibrator.vibrate(VIBRATE_EFFECT_ERROR, FINGERPRINT_ENROLLING_SONFICATION_ATTRIBUTES);
+        }
     }
 
     private void clearError() {
@@ -373,12 +364,7 @@ public class FingerprintEnrollEnrolling extends FingerprintEnrollBase
                             R.dimen.fingerprint_error_text_disappear_distance))
                     .setDuration(100)
                     .setInterpolator(mFastOutLinearInInterpolator)
-                    .withEndAction(new Runnable() {
-                        @Override
-                        public void run() {
-                            mErrorText.setVisibility(View.INVISIBLE);
-                        }
-                    })
+                    .withEndAction(() -> mErrorText.setVisibility(View.INVISIBLE))
                     .start();
         }
     }

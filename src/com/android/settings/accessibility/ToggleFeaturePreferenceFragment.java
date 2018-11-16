@@ -17,17 +17,11 @@
 package com.android.settings.accessibility;
 
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.PreferenceViewHolder;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 import android.view.View;
-import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityManager;
-import android.widget.TextView;
 
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
@@ -35,14 +29,12 @@ import com.android.settings.SettingsPreferenceFragment;
 import com.android.settings.widget.SwitchBar;
 import com.android.settings.widget.ToggleSwitch;
 
-public abstract class ToggleFeaturePreferenceFragment
-        extends SettingsPreferenceFragment {
+public abstract class ToggleFeaturePreferenceFragment extends SettingsPreferenceFragment {
 
     protected SwitchBar mSwitchBar;
     protected ToggleSwitch mToggleSwitch;
 
     protected String mPreferenceKey;
-    protected Preference mSummaryPreference;
 
     protected CharSequence mSettingsTitle;
     protected Intent mSettingsIntent;
@@ -50,39 +42,12 @@ public abstract class ToggleFeaturePreferenceFragment
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        PreferenceScreen preferenceScreen = getPreferenceManager().createPreferenceScreen(
-                getActivity());
-        setPreferenceScreen(preferenceScreen);
-        mSummaryPreference = new Preference(getPrefContext()) {
-            @Override
-            public void onBindViewHolder(PreferenceViewHolder view) {
-                super.onBindViewHolder(view);
-                view.setDividerAllowedAbove(false);
-                view.setDividerAllowedBelow(false);
-                final TextView summaryView = (TextView) view.findViewById(android.R.id.summary);
-                summaryView.setText(getSummary());
-                sendAccessibilityEvent(summaryView);
-            }
-
-            private void sendAccessibilityEvent(View view) {
-                // Since the view is still not attached we create, populate,
-                // and send the event directly since we do not know when it
-                // will be attached and posting commands is not as clean.
-                AccessibilityManager accessibilityManager =
-                        AccessibilityManager.getInstance(getActivity());
-                if (accessibilityManager.isEnabled()) {
-                    AccessibilityEvent event = AccessibilityEvent.obtain();
-                    event.setEventType(AccessibilityEvent.TYPE_VIEW_FOCUSED);
-                    view.onInitializeAccessibilityEvent(event);
-                    view.dispatchPopulateAccessibilityEvent(event);
-                    accessibilityManager.sendAccessibilityEvent(event);
-                }
-            }
-        };
-        mSummaryPreference.setSelectable(false);
-        mSummaryPreference.setPersistent(false);
-        mSummaryPreference.setLayoutResource(R.layout.text_description_preference);
-        preferenceScreen.addPreference(mSummaryPreference);
+        final int resId = getPreferenceScreenResId();
+        if (resId <= 0) {
+            PreferenceScreen preferenceScreen = getPreferenceManager().createPreferenceScreen(
+                    getActivity());
+            setPreferenceScreen(preferenceScreen);
+        }
     }
 
     @Override
@@ -91,9 +56,20 @@ public abstract class ToggleFeaturePreferenceFragment
 
         SettingsActivity activity = (SettingsActivity) getActivity();
         mSwitchBar = activity.getSwitchBar();
+        updateSwitchBarText(mSwitchBar);
         mToggleSwitch = mSwitchBar.getSwitch();
 
         onProcessArguments(getArguments());
+
+        // Show the "Settings" menu as if it were a preference screen
+        if (mSettingsTitle != null && mSettingsIntent != null) {
+            PreferenceScreen preferenceScreen = getPreferenceScreen();
+            Preference settingsPref = new Preference(preferenceScreen.getContext());
+            settingsPref.setTitle(mSettingsTitle);
+            settingsPref.setIconSpaceReserved(true);
+            settingsPref.setIntent(mSettingsIntent);
+            preferenceScreen.addPreference(settingsPref);
+        }
     }
 
     @Override
@@ -109,17 +85,13 @@ public abstract class ToggleFeaturePreferenceFragment
         removeActionBarToggleSwitch();
     }
 
-    protected abstract void onPreferenceToggled(String preferenceKey, boolean enabled);
-
-    @Override
-    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        super.onCreateOptionsMenu(menu, inflater);
-        if (mSettingsTitle != null && mSettingsIntent != null) {
-            MenuItem menuItem = menu.add(mSettingsTitle);
-            menuItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
-            menuItem.setIntent(mSettingsIntent);
-        }
+    protected void updateSwitchBarText(SwitchBar switchBar) {
+        // Implement this to provide meaningful text in switch bar
+        switchBar.setSwitchBarText(R.string.accessibility_service_master_switch_title,
+                R.string.accessibility_service_master_switch_title);
     }
+
+    protected abstract void onPreferenceToggled(String preferenceKey, boolean enabled);
 
     protected void onInstallSwitchBarToggleSwitch() {
         // Implement this to set a checked listener.
@@ -145,11 +117,6 @@ public abstract class ToggleFeaturePreferenceFragment
     }
 
     protected void onProcessArguments(Bundle arguments) {
-        if (arguments == null) {
-            getPreferenceScreen().removePreference(mSummaryPreference);
-            return;
-        }
-
         // Key.
         mPreferenceKey = arguments.getString(AccessibilitySettings.EXTRA_PREFERENCE_KEY);
 
@@ -160,17 +127,21 @@ public abstract class ToggleFeaturePreferenceFragment
         }
 
         // Title.
-        if (arguments.containsKey(AccessibilitySettings.EXTRA_TITLE)) {
+        if (arguments.containsKey(AccessibilitySettings.EXTRA_RESOLVE_INFO)) {
+            ResolveInfo info = arguments.getParcelable(AccessibilitySettings.EXTRA_RESOLVE_INFO);
+            getActivity().setTitle(info.loadLabel(getPackageManager()).toString());
+        } else if (arguments.containsKey(AccessibilitySettings.EXTRA_TITLE)) {
             setTitle(arguments.getString(AccessibilitySettings.EXTRA_TITLE));
         }
 
         // Summary.
-        if (arguments.containsKey(AccessibilitySettings.EXTRA_SUMMARY)) {
+        if (arguments.containsKey(AccessibilitySettings.EXTRA_SUMMARY_RES)) {
+            final int summary = arguments.getInt(AccessibilitySettings.EXTRA_SUMMARY_RES);
+            mFooterPreferenceMixin.createFooterPreference().setTitle(summary);
+        } else if (arguments.containsKey(AccessibilitySettings.EXTRA_SUMMARY)) {
             final CharSequence summary = arguments.getCharSequence(
                     AccessibilitySettings.EXTRA_SUMMARY);
-            mSummaryPreference.setSummary(summary);
-        } else {
-            getPreferenceScreen().removePreference(mSummaryPreference);
+            mFooterPreferenceMixin.createFooterPreference().setTitle(summary);
         }
     }
 }

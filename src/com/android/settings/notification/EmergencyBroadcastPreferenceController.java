@@ -20,25 +20,26 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.support.annotation.VisibleForTesting;
-import android.support.v7.preference.Preference;
+import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
 
 import com.android.settings.accounts.AccountRestrictionHelper;
-import com.android.settings.core.PreferenceController;
+import com.android.settings.core.PreferenceControllerMixin;
 import com.android.settingslib.RestrictedPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
 
 /**
  * Base class for preference controller that handles preference that enforce adjust volume
  * restriction
  */
-public class EmergencyBroadcastPreferenceController extends PreferenceController {
+public class EmergencyBroadcastPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin {
 
     private final String mPrefKey;
 
     private AccountRestrictionHelper mHelper;
     private UserManager mUserManager;
     private PackageManager mPm;
-    private boolean mCellBroadcastAppLinkEnabled;
 
     public EmergencyBroadcastPreferenceController(Context context, String prefKey) {
         this(context, new AccountRestrictionHelper(context), prefKey);
@@ -52,8 +53,6 @@ public class EmergencyBroadcastPreferenceController extends PreferenceController
         mHelper = helper;
         mUserManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
         mPm = mContext.getPackageManager();
-        // Enable link to CMAS app settings depending on the value in config.xml.
-        mCellBroadcastAppLinkEnabled = isCellBroadcastAppLinkEnabled();
     }
 
     @Override
@@ -77,12 +76,13 @@ public class EmergencyBroadcastPreferenceController extends PreferenceController
 
     @Override
     public boolean isAvailable() {
-        return mUserManager.isAdminUser() && mCellBroadcastAppLinkEnabled
+        return mUserManager.isAdminUser() && isCellBroadcastAppLinkEnabled()
                 && !mHelper.hasBaseUserRestriction(
                 UserManager.DISALLOW_CONFIG_CELL_BROADCASTS, UserHandle.myUserId());
     }
 
     private boolean isCellBroadcastAppLinkEnabled() {
+        // Enable link to CMAS app settings depending on the value in config.xml.
         boolean enabled = mContext.getResources().getBoolean(
                 com.android.internal.R.bool.config_cellBroadcastAppLinks);
         if (enabled) {

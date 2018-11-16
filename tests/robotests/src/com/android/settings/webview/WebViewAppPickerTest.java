@@ -39,12 +39,13 @@ import android.content.pm.PackageItemInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.UserInfo;
 import android.os.UserManager;
+import android.webkit.UserPackage;
 
-import com.android.settings.SettingsRobolectricTestRunner;
-import com.android.settings.TestConfig;
-import com.android.settings.applications.PackageManagerWrapper;
-import com.android.settings.applications.defaultapps.DefaultAppInfo;
+import com.android.settings.testutils.SettingsRobolectricTestRunner;
 import com.android.settings.widget.RadioButtonPreference;
+import com.android.settingslib.applications.DefaultAppInfo;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.wrapper.PackageManagerWrapper;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -53,22 +54,22 @@ import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.annotation.Config;
 import org.robolectric.util.ReflectionHelpers;
 
 import java.util.Arrays;
+import java.util.Collections;
 
 @RunWith(SettingsRobolectricTestRunner.class)
-@Config(manifest = TestConfig.MANIFEST_PATH, sdk = TestConfig.SDK_VERSION)
 public class WebViewAppPickerTest {
-    private Context mContext = RuntimeEnvironment.application;
-
-    private final static UserInfo FIRST_USER = new UserInfo(0, "FIRST_USER", 0);
-    private final static UserInfo SECOND_USER = new UserInfo(0, "SECOND_USER", 0);
 
     private final static String DEFAULT_PACKAGE_NAME = "DEFAULT_PACKAGE_NAME";
 
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    private Context mContext;
+
+    private UserInfo mFirstUser;
+    private UserInfo mSecondUser;
+
+    @Mock
     private Activity mActivity;
     @Mock
     private UserManager mUserManager;
@@ -87,8 +88,10 @@ public class WebViewAppPickerTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        when(mActivity.getSystemService(Context.USER_SERVICE)).thenReturn(mUserManager);
-
+        mContext = spy(RuntimeEnvironment.application);
+        doReturn(mUserManager).when(mContext).getSystemService(Context.USER_SERVICE);
+        mFirstUser = new UserInfo(0, "FIRST_USER", 0);
+        mSecondUser = new UserInfo(0, "SECOND_USER", 0);
         mPicker = new WebViewAppPicker();
         mPicker = spy(mPicker);
         doNothing().when(mPicker).updateCandidates();
@@ -96,7 +99,8 @@ public class WebViewAppPickerTest {
         doReturn(mActivity).when(mPicker).getActivity();
 
         ReflectionHelpers.setField(mPicker, "mPm", mPackageManager);
-
+        ReflectionHelpers.setField(mPicker, "mMetricsFeatureProvider",
+                mock(MetricsFeatureProvider.class));
         mWvusWrapper = mock(WebViewUpdateServiceWrapper.class);
         mPicker.setWebViewUpdateServiceWrapper(mWvusWrapper);
     }
@@ -130,8 +134,8 @@ public class WebViewAppPickerTest {
     }
 
     private void testSuccessfulClickChangesProvider() {
-        when(mWvusWrapper.getValidWebViewApplicationInfos(any())).thenReturn(
-                Arrays.asList(createApplicationInfo(DEFAULT_PACKAGE_NAME)));
+        when(mWvusWrapper.getValidWebViewApplicationInfos(any()))
+                .thenReturn(Collections.singletonList(createApplicationInfo(DEFAULT_PACKAGE_NAME)));
         when(mWvusWrapper.setWebViewProvider(eq(DEFAULT_PACKAGE_NAME))).thenReturn(true);
 
         RadioButtonPreference defaultPackagePref = mock(RadioButtonPreference.class);
@@ -144,8 +148,8 @@ public class WebViewAppPickerTest {
     }
 
     private void testFailingClickUpdatesSetting() {
-        when(mWvusWrapper.getValidWebViewApplicationInfos(any())).thenReturn(
-                Arrays.asList(createApplicationInfo(DEFAULT_PACKAGE_NAME)));
+        when(mWvusWrapper.getValidWebViewApplicationInfos(any()))
+                .thenReturn(Collections.singletonList(createApplicationInfo(DEFAULT_PACKAGE_NAME)));
         when(mWvusWrapper.setWebViewProvider(eq(DEFAULT_PACKAGE_NAME))).thenReturn(false);
 
         RadioButtonPreference defaultPackagePref = mock(RadioButtonPreference.class);
@@ -161,150 +165,136 @@ public class WebViewAppPickerTest {
 
     @Test
     public void testDisabledPackageShownAsDisabled() {
-        String disabledReason = "disabled";
-        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mPackageManager,
-                createApplicationInfo(DEFAULT_PACKAGE_NAME), disabledReason);
+        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mContext, mPackageManager,
+                createApplicationInfo(DEFAULT_PACKAGE_NAME), "disabled");
 
-        RadioButtonPreference mockPreference = mock(RadioButtonPreference.class);
-        mPicker.bindPreference(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
-        mPicker.bindPreferenceExtra(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
-        verify(mockPreference, times(1)).setEnabled(eq(false));
-        verify(mockPreference, never()).setEnabled(eq(true));
+        RadioButtonPreference preference = mock(RadioButtonPreference.class);
+        mPicker.bindPreference(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
+        mPicker.bindPreferenceExtra(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
+        verify(preference, times(1)).setEnabled(eq(false));
+        verify(preference, never()).setEnabled(eq(true));
     }
 
     @Test
     public void testEnabledPackageShownAsEnabled() {
         String disabledReason = "";
-        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mPackageManager,
+        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mContext, mPackageManager,
                 createApplicationInfo(DEFAULT_PACKAGE_NAME), disabledReason);
 
-        RadioButtonPreference mockPreference = mock(RadioButtonPreference.class);
-        mPicker.bindPreference(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
-        mPicker.bindPreferenceExtra(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
-        verify(mockPreference, times(1)).setEnabled(eq(true));
-        verify(mockPreference, never()).setEnabled(eq(false));
+        RadioButtonPreference preference = mock(RadioButtonPreference.class);
+        mPicker.bindPreference(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
+        mPicker.bindPreferenceExtra(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
+        verify(preference, times(1)).setEnabled(eq(true));
+        verify(preference, never()).setEnabled(eq(false));
     }
 
     @Test
     public void testDisabledPackageShowsDisabledReasonSummary() {
         String disabledReason = "disabled";
-        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mPackageManager,
+        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mContext, mPackageManager,
                 createApplicationInfo(DEFAULT_PACKAGE_NAME), disabledReason);
 
-        RadioButtonPreference mockPreference = mock(RadioButtonPreference.class);
-        mPicker.bindPreference(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
-        mPicker.bindPreferenceExtra(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
-        verify(mockPreference, times(1)).setSummary(eq(disabledReason));
+        RadioButtonPreference preference = mock(RadioButtonPreference.class);
+        mPicker.bindPreference(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
+        mPicker.bindPreferenceExtra(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
+        verify(preference, times(1)).setSummary(eq(disabledReason));
         // Ensure we haven't called setSummary several times.
-        verify(mockPreference, times(1)).setSummary(any());
+        verify(preference, times(1)).setSummary(any());
     }
 
     @Test
     public void testEnabledPackageShowsEmptySummary() {
-        String disabledReason = null;
-        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mPackageManager,
-                createApplicationInfo(DEFAULT_PACKAGE_NAME), disabledReason);
+        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mContext, mPackageManager,
+                createApplicationInfo(DEFAULT_PACKAGE_NAME), null);
 
-        RadioButtonPreference mockPreference = mock(RadioButtonPreference.class);
-        mPicker.bindPreference(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
-        mPicker.bindPreferenceExtra(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
-        verify(mockPreference, never()).setSummary(any());
+        RadioButtonPreference preference = mock(RadioButtonPreference.class);
+        mPicker.bindPreference(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
+        mPicker.bindPreferenceExtra(preference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
+        verify(preference, never()).setSummary(any());
     }
 
     @Test
     public void testFinishIfNotAdmin() {
         doReturn(false).when(mUserManager).isAdminUser();
-        mPicker.onAttach((Context) mActivity);
+        mPicker.onAttach(mContext);
         verify(mActivity, times(1)).finish();
     }
 
     @Test
     public void testNotFinishedIfAdmin() {
         doReturn(true).when(mUserManager).isAdminUser();
-        mPicker.onAttach((Context) mActivity);
+        mPicker.onAttach(mContext);
         verify(mActivity, never()).finish();
     }
 
     @Test
     public void testDisabledReasonNullIfPackagesOk() {
-        UserPackageWrapper packageForFirstUser = mock(UserPackageWrapper.class);
+        UserPackage packageForFirstUser = mock(UserPackage.class);
         when(packageForFirstUser.isEnabledPackage()).thenReturn(true);
         when(packageForFirstUser.isInstalledPackage()).thenReturn(true);
 
-        UserPackageWrapper packageForSecondUser = mock(UserPackageWrapper.class);
+        UserPackage packageForSecondUser = mock(UserPackage.class);
         when(packageForSecondUser.isEnabledPackage()).thenReturn(true);
         when(packageForSecondUser.isInstalledPackage()).thenReturn(true);
 
         WebViewUpdateServiceWrapper wvusWrapper = mock(WebViewUpdateServiceWrapper.class);
-        when(wvusWrapper.getPackageInfosAllUsers(
-                any(), eq(DEFAULT_PACKAGE_NAME))).thenReturn(
-                Arrays.asList(packageForFirstUser, packageForSecondUser));
+        when(wvusWrapper.getPackageInfosAllUsers(any(), eq(DEFAULT_PACKAGE_NAME)))
+                .thenReturn(Arrays.asList(packageForFirstUser, packageForSecondUser));
 
         assertThat(mPicker.getDisabledReason(wvusWrapper, mContext, DEFAULT_PACKAGE_NAME)).isNull();
     }
 
     @Test
     public void testDisabledReasonForSingleUserDisabledPackage() {
-        UserPackageWrapper packageForFirstUser = mock(UserPackageWrapper.class);
+        UserPackage packageForFirstUser = mock(UserPackage.class);
         when(packageForFirstUser.isEnabledPackage()).thenReturn(false);
         when(packageForFirstUser.isInstalledPackage()).thenReturn(true);
-        when(packageForFirstUser.getUserInfo()).thenReturn(FIRST_USER);
+        when(packageForFirstUser.getUserInfo()).thenReturn(mFirstUser);
 
         WebViewUpdateServiceWrapper wvusWrapper = mock(WebViewUpdateServiceWrapper.class);
         when(wvusWrapper.getPackageInfosAllUsers(any(), eq(DEFAULT_PACKAGE_NAME)))
-                .thenReturn(Arrays.asList(packageForFirstUser));
+                .thenReturn(Collections.singletonList(packageForFirstUser));
 
-        final String EXPECTED_DISABLED_REASON = String.format(
-                "(disabled for user %s)", FIRST_USER.name);
-        assertThat(mPicker.getDisabledReason(wvusWrapper, mContext,
-                DEFAULT_PACKAGE_NAME)).isEqualTo(EXPECTED_DISABLED_REASON);
+        final String expectedReason = String.format("(disabled for user %s)", mFirstUser.name);
+        assertThat(mPicker.getDisabledReason(wvusWrapper, mContext, DEFAULT_PACKAGE_NAME))
+                .isEqualTo(expectedReason);
     }
 
     @Test
     public void testDisabledReasonForSingleUserUninstalledPackage() {
-        UserPackageWrapper packageForFirstUser = mock(UserPackageWrapper.class);
+        UserPackage packageForFirstUser = mock(UserPackage.class);
         when(packageForFirstUser.isEnabledPackage()).thenReturn(true);
         when(packageForFirstUser.isInstalledPackage()).thenReturn(false);
-        when(packageForFirstUser.getUserInfo()).thenReturn(FIRST_USER);
+        when(packageForFirstUser.getUserInfo()).thenReturn(mFirstUser);
 
         WebViewUpdateServiceWrapper wvusWrapper = mock(WebViewUpdateServiceWrapper.class);
         when(wvusWrapper.getPackageInfosAllUsers(any(), eq(DEFAULT_PACKAGE_NAME)))
-                .thenReturn(Arrays.asList(packageForFirstUser));
+                .thenReturn(Collections.singletonList(packageForFirstUser));
 
-        final String EXPECTED_DISABLED_REASON = String.format(
-                "(uninstalled for user %s)", FIRST_USER.name);
-        assertThat(mPicker.getDisabledReason(wvusWrapper, mContext,
-                DEFAULT_PACKAGE_NAME)).isEqualTo(EXPECTED_DISABLED_REASON);
+        final String expectedReason = String.format("(uninstalled for user %s)", mFirstUser.name);
+        assertThat(mPicker.getDisabledReason(wvusWrapper, mContext, DEFAULT_PACKAGE_NAME))
+                .isEqualTo(expectedReason);
     }
 
     @Test
     public void testDisabledReasonSeveralUsers() {
-        UserPackageWrapper packageForFirstUser = mock(UserPackageWrapper.class);
+        UserPackage packageForFirstUser = mock(UserPackage.class);
         when(packageForFirstUser.isEnabledPackage()).thenReturn(false);
         when(packageForFirstUser.isInstalledPackage()).thenReturn(true);
-        when(packageForFirstUser.getUserInfo()).thenReturn(FIRST_USER);
+        when(packageForFirstUser.getUserInfo()).thenReturn(mFirstUser);
 
-        UserPackageWrapper packageForSecondUser = mock(UserPackageWrapper.class);
+        UserPackage packageForSecondUser = mock(UserPackage.class);
         when(packageForSecondUser.isEnabledPackage()).thenReturn(true);
         when(packageForSecondUser.isInstalledPackage()).thenReturn(false);
-        when(packageForSecondUser.getUserInfo()).thenReturn(SECOND_USER);
+        when(packageForSecondUser.getUserInfo()).thenReturn(mSecondUser);
 
         WebViewUpdateServiceWrapper wvusWrapper = mock(WebViewUpdateServiceWrapper.class);
         when(wvusWrapper.getPackageInfosAllUsers(any(), eq(DEFAULT_PACKAGE_NAME)))
                 .thenReturn(Arrays.asList(packageForFirstUser, packageForSecondUser));
 
-        final String EXPECTED_DISABLED_REASON = String.format(
-                "(disabled for user %s)", FIRST_USER.name);
-        assertThat(mPicker.getDisabledReason(
-                wvusWrapper, mContext, DEFAULT_PACKAGE_NAME)).isEqualTo(EXPECTED_DISABLED_REASON);
+        final String expectedReason = String.format("(disabled for user %s)", mFirstUser.name);
+        assertThat(mPicker.getDisabledReason(wvusWrapper, mContext, DEFAULT_PACKAGE_NAME))
+                .isEqualTo(expectedReason);
     }
 
     /**
@@ -313,24 +303,23 @@ public class WebViewAppPickerTest {
      */
     @Test
     public void testDisabledReasonUninstalledAndDisabled() {
-        UserPackageWrapper packageForFirstUser = mock(UserPackageWrapper.class);
+        UserPackage packageForFirstUser = mock(UserPackage.class);
         when(packageForFirstUser.isEnabledPackage()).thenReturn(false);
         when(packageForFirstUser.isInstalledPackage()).thenReturn(false);
-        when(packageForFirstUser.getUserInfo()).thenReturn(FIRST_USER);
+        when(packageForFirstUser.getUserInfo()).thenReturn(mFirstUser);
 
-        UserPackageWrapper packageForSecondUser = mock(UserPackageWrapper.class);
+        UserPackage packageForSecondUser = mock(UserPackage.class);
         when(packageForSecondUser.isEnabledPackage()).thenReturn(true);
         when(packageForSecondUser.isInstalledPackage()).thenReturn(true);
-        when(packageForSecondUser.getUserInfo()).thenReturn(SECOND_USER);
+        when(packageForSecondUser.getUserInfo()).thenReturn(mSecondUser);
 
         WebViewUpdateServiceWrapper wvusWrapper = mock(WebViewUpdateServiceWrapper.class);
         when(wvusWrapper.getPackageInfosAllUsers(any(), eq(DEFAULT_PACKAGE_NAME)))
                 .thenReturn(Arrays.asList(packageForFirstUser, packageForSecondUser));
 
-        final String EXPECTED_DISABLED_REASON = String.format(
-                "(uninstalled for user %s)", FIRST_USER.name);
-        assertThat(mPicker.getDisabledReason(wvusWrapper, mContext,
-                DEFAULT_PACKAGE_NAME)).isEqualTo(EXPECTED_DISABLED_REASON);
+        final String expectedReason = String.format("(uninstalled for user %s)", mFirstUser.name);
+        assertThat(mPicker.getDisabledReason(wvusWrapper, mContext, DEFAULT_PACKAGE_NAME))
+                .isEqualTo(expectedReason);
     }
 
     /**
@@ -342,7 +331,7 @@ public class WebViewAppPickerTest {
         PackageItemInfo mockPackageItemInfo = mock(PackageItemInfo.class);
         mockPackageItemInfo.packageName = DEFAULT_PACKAGE_NAME;
         when(mockPackageItemInfo.loadLabel(any())).thenReturn("myPackage");
-        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mPackageManager,
+        DefaultAppInfo webviewAppInfo = mPicker.createDefaultAppInfo(mContext, mPackageManager,
                 mockPackageItemInfo, "" /* disabledReason */);
 
         PackageInfo packageInfo = new PackageInfo();
@@ -352,10 +341,10 @@ public class WebViewAppPickerTest {
         when(mPackageManager.getPackageManager()).thenReturn(pm);
 
         RadioButtonPreference mockPreference = mock(RadioButtonPreference.class);
-        mPicker.bindPreference(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
-        mPicker.bindPreferenceExtra(mockPreference,
-                DEFAULT_PACKAGE_NAME, webviewAppInfo, null, null);
+        mPicker.bindPreference(mockPreference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null);
+        mPicker
+                .bindPreferenceExtra(mockPreference, DEFAULT_PACKAGE_NAME, webviewAppInfo, null,
+                        null);
         verify(mockPreference, times(1)).setTitle(eq("myPackage myVersionName"));
         verify(mockPreference, times(1)).setTitle(any());
     }

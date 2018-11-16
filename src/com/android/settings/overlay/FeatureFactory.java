@@ -21,17 +21,21 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.settings.R;
+import com.android.settings.accounts.AccountFeatureProvider;
 import com.android.settings.applications.ApplicationFeatureProvider;
-import com.android.settings.core.instrumentation.MetricsFeatureProvider;
+import com.android.settings.bluetooth.BluetoothFeatureProvider;
 import com.android.settings.dashboard.DashboardFeatureProvider;
 import com.android.settings.dashboard.suggestions.SuggestionFeatureProvider;
 import com.android.settings.enterprise.EnterprisePrivacyFeatureProvider;
 import com.android.settings.fuelgauge.PowerUsageFeatureProvider;
 import com.android.settings.gestures.AssistGestureFeatureProvider;
 import com.android.settings.localepicker.LocaleFeatureProvider;
+import com.android.settings.search.DeviceIndexFeatureProvider;
+import com.android.settings.search.SearchFeatureProvider;
 import com.android.settings.security.SecurityFeatureProvider;
-import com.android.settings.search2.SearchFeatureProvider;
+import com.android.settings.slices.SlicesFeatureProvider;
 import com.android.settings.users.UserFeatureProvider;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
 
 /**
  * Abstract class for creating feature controllers. Allows OEM implementations to define their own
@@ -82,6 +86,8 @@ public abstract class FeatureFactory {
 
     public abstract DashboardFeatureProvider getDashboardFeatureProvider(Context context);
 
+    public abstract DockUpdaterFeatureProvider getDockUpdaterFeatureProvider();
+
     public abstract ApplicationFeatureProvider getApplicationFeatureProvider(Context context);
 
     public abstract LocaleFeatureProvider getLocaleFeatureProvider();
@@ -96,6 +102,14 @@ public abstract class FeatureFactory {
     public abstract SecurityFeatureProvider getSecurityFeatureProvider();
 
     public abstract UserFeatureProvider getUserFeatureProvider(Context context);
+
+    public abstract BluetoothFeatureProvider getBluetoothFeatureProvider(Context context);
+
+    public abstract SlicesFeatureProvider getSlicesFeatureProvider();
+
+    public abstract AccountFeatureProvider getAccountFeatureProvider();
+
+    public abstract DeviceIndexFeatureProvider getDeviceIndexFeatureProvider();
 
     public static final class FactoryNotFoundException extends RuntimeException {
         public FactoryNotFoundException(Throwable throwable) {

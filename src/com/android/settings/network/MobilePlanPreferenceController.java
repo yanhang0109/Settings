@@ -15,6 +15,13 @@
  */
 package com.android.settings.network;
 
+import static android.content.Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT;
+import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
+import static android.os.UserHandle.myUserId;
+import static android.os.UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS;
+
+import static com.android.settingslib.RestrictedLockUtils.hasBaseUserRestriction;
+
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -24,29 +31,24 @@ import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.UserManager;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.settings.R;
-import com.android.settings.Utils;
-import com.android.settings.core.PreferenceController;
-import com.android.settings.core.lifecycle.LifecycleObserver;
-import com.android.settings.core.lifecycle.events.OnCreate;
-import com.android.settings.core.lifecycle.events.OnSaveInstanceState;
+import com.android.settings.core.PreferenceControllerMixin;
+import com.android.settingslib.Utils;
+import com.android.settingslib.core.AbstractPreferenceController;
+import com.android.settingslib.core.lifecycle.LifecycleObserver;
+import com.android.settingslib.core.lifecycle.events.OnCreate;
+import com.android.settingslib.core.lifecycle.events.OnSaveInstanceState;
 
 import java.util.List;
 
-import static android.content.Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT;
-import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
-import static android.os.UserHandle.myUserId;
-import static android.os.UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS;
-import static com.android.settingslib.RestrictedLockUtils.hasBaseUserRestriction;
 
-
-public class MobilePlanPreferenceController extends PreferenceController implements
-        LifecycleObserver, OnCreate, OnSaveInstanceState {
+public class MobilePlanPreferenceController extends AbstractPreferenceController
+        implements PreferenceControllerMixin, LifecycleObserver, OnCreate, OnSaveInstanceState {
 
     public interface MobilePlanPreferenceHost {
         void showMobilePlanMessageDialog();
